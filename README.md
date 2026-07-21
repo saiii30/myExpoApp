@@ -1,50 +1,194 @@
-# Welcome to your Expo app 👋
+# Travel Management System for Cab Drivers
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A comprehensive travel management system built with React Native (Expo), Python (Flask), and PostgreSQL. This application is designed specifically for cab drivers to manage trips, view maps, and receive notifications.
 
-## Get started
+## Features
 
-1. Install dependencies
+- **Authentication**: Driver login and signup with vehicle details
+- **Trip Management**: View available trips, accept/reject trips, complete trips
+- **Map Integration**: Real-time location tracking and route visualization
+- **Notifications**: In-app notifications for trip requests and updates
+- **Dashboard**: Overview of available trips, notifications, and quick actions
 
+## Tech Stack
+
+### Frontend
+- React Native (Expo)
+- Expo Router for navigation
+- React Native Maps for map functionality
+- Expo Location for GPS tracking
+- Axios for API communication
+
+### Backend
+- Python Flask
+- SQLite database (for easy development)
+- Flask-SQLAlchemy for ORM
+- Flask-CORS for cross-origin requests
+
+## Prerequisites
+
+- Node.js (v18 or higher)
+- Python (v3.8 or higher)
+- Expo CLI
+- Android Studio / Xcode (for mobile development)
+
+## Setup Instructions
+
+### Backend Setup
+
+1. **Navigate to backend directory**
+   ```bash
+   cd backend
+   ```
+
+2. **Install Python dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Run the backend server**
+   ```bash
+   python app.py
+   ```
+   The API will be available at `http://localhost:5000`
+
+   **Note:** The backend uses SQLite by default. The database file `travel_management.db` will be created automatically.
+
+### Frontend Setup
+
+1. **Install dependencies**
    ```bash
    npm install
    ```
 
-2. Start the app
-
+2. **Start the Expo development server**
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+3. **Run on your preferred platform**
+   - Press `a` for Android emulator
+   - Press `i` for iOS simulator
+   - Scan QR code with Expo Go app for physical device
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## API Endpoints
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+### Authentication
+- `POST /api/signup` - Create new driver account
+- `POST /api/login` - Login driver
 
-## Get a fresh project
+### Trips
+- `GET /api/trips` - Get all trips (filter by status and driver_id)
+- `POST /api/trips` - Create new trip
+- `POST /api/trips/<id>/accept` - Accept a trip
+- `POST /api/trips/<id>/reject` - Reject a trip
+- `POST /api/trips/<id>/complete` - Complete a trip
 
-When you're ready, run:
+### Notifications
+- `GET /api/notifications/<user_id>` - Get user notifications
+- `POST /api/notifications/<id>/read` - Mark notification as read
 
-```bash
-npm run reset-project
-```
+## App Screens
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+1. **Login Screen** (`app/(tabs)/index.tsx`)
+   - Driver authentication
+   - Links to signup page
 
-## Learn more
+2. **Signup Screen** (`app/signup.tsx`)
+   - Driver registration
+   - Vehicle and license details
 
-To learn more about developing your project with Expo, look at the following resources:
+3. **Dashboard** (`app/screens/dashboard.tsx`)
+   - Overview of trips and notifications
+   - Quick access to all features
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+4. **Trips Screen** (`app/screens/trips.tsx`)
+   - List of available/accepted/completed trips
+   - Accept/reject functionality
+   - Status filtering
 
-## Join the community
+5. **Trip Details** (`app/screens/trip-details.tsx`)
+   - Detailed trip information
+   - Route map visualization
+   - Passenger details
 
-Join our community of developers creating universal apps.
+6. **Map Screen** (`app/screens/map.tsx`)
+   - Real-time location tracking
+   - Current location display
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+7. **Notifications** (`app/screens/notifications.tsx`)
+   - List of all notifications
+   - Mark as read functionality
+   - Trip request alerts
+
+## Database Schema
+
+### Users Table
+- id, name, email, password, phone
+- vehicle_number, license_number
+- is_driver, created_at
+
+### Trips Table
+- id, passenger_name, passenger_phone
+- pickup_location, pickup_lat, pickup_lng
+- dropoff_location, dropoff_lat, dropoff_lng
+- status, fare, distance
+- driver_id, created_at, accepted_at, completed_at
+
+### Notifications Table
+- id, user_id, title, message
+- type, is_read, trip_id
+- created_at
+
+## Usage
+
+1. **Start the backend server** (from backend directory)
+   ```bash
+   python app.py
+   ```
+
+2. **Start the frontend** (from project root)
+   ```bash
+   npx expo start
+   ```
+
+3. **Create a driver account**
+   - Open the app
+   - Click "Sign up"
+   - Fill in driver details
+
+4. **Login and start using**
+   - Login with your credentials
+   - View available trips on dashboard
+   - Accept/reject trips
+   - View notifications
+   - Track location on map
+
+## Development Notes
+
+- The backend runs on port 5000
+- The frontend uses Expo Router for navigation
+- Location permissions are required for map functionality
+- In production, use proper authentication tokens (JWT)
+- Consider using AsyncStorage for persistent login sessions
+
+## Troubleshooting
+
+**Backend connection issues:**
+- Ensure PostgreSQL is running
+- Check DATABASE_URL in backend/app.py
+- Verify backend server is running on port 5000
+
+**Map not displaying:**
+- Ensure location permissions are granted
+- Check Google Maps API key configuration (if needed)
+- Verify expo-location and react-native-maps are installed
+
+**Build errors:**
+- Run `npm install` to ensure all dependencies are installed
+- Clear Expo cache: `npx expo start -c`
+- Check Node.js version compatibility
+
+## License
+
+This project is for demonstration purposes.
