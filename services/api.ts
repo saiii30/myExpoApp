@@ -88,14 +88,3 @@ export const tripsAPI = {
     return response.data;
   },
 };
-
-export const notificationsAPI = {
-  getNotifications: async (userId?: number | string) => {
-    const response = await api.get(userId ? `/notifications/${userId}` : '/notifications');
-    return response.data;
-  },
-  markAsRead: async (notificationId: string | number) => {
-    const response = await api.delete(`/notifications/${notificationId}`);
-    return response.data;
-  },
-};

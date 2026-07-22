@@ -1,6 +1,5 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loadSession, session, tripsAPI } from '@/services/api';
-import { scheduleTripNotifications } from '@/services/notifications';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -83,7 +82,6 @@ export default function TripsScreen() {
     try {
       setLoading(true);
       const data = await tripsAPI.getTrips(undefined, driverId, agencyId);
-      await scheduleTripNotifications(data);
 
       // Filter database trips according to activeTab status logic
       const filteredDbTrips = data.filter((t: any) => {

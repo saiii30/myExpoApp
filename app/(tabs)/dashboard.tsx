@@ -1,5 +1,5 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { notificationsAPI, session, tripsAPI } from '@/services/api';
+import { session, tripsAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -8,7 +8,6 @@ import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpa
 export default function Dashboard() {
   const [availableCount, setAvailableCount] = useState<number | string>('-');
   const [myTripsCount, setMyTripsCount] = useState<number | string>('-');
-  const [notiCount, setNotiCount] = useState<number | string>('-');
   const [loading, setLoading] = useState(true);
 
   const theme = useColorScheme();
@@ -54,18 +53,10 @@ export default function Dashboard() {
 
         setAvailableCount(available);
         setMyTripsCount(myTrips);
-
-        try {
-          const notifications = await notificationsAPI.getNotifications();
-          setNotiCount(notifications.length);
-        } catch (e) {
-          setNotiCount(0);
-        }
       } catch (error) {
         console.error('Failed to fetch dashboard counts:', error);
         setAvailableCount(0);
         setMyTripsCount(0);
-        setNotiCount(0);
       } finally {
         setLoading(false);
       }
@@ -173,23 +164,6 @@ export default function Dashboard() {
             </View>
             <View style={[styles.countBadge, { backgroundColor: 'rgba(16, 185, 129, 0.18)' }]}>
               <Text style={[styles.countText, { color: '#10b981' }]}>{availableCount}</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* System Alerts / Notifications Row */}
-          <TouchableOpacity
-            style={[styles.metricRow, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => router.push('/screens/notifications' as any)}
-          >
-            <View style={[styles.metricIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}>
-              <FontAwesome5 name="bell" size={18} color="#f59e0b" />
-            </View>
-            <View style={styles.metricTextContent}>
-              <Text style={[styles.metricName, { color: colors.textPrimary }]}>System Alerts</Text>
-              <Text style={[styles.metricDesc, { color: colors.textSecondary }]}>Important messages from dispatch managers.</Text>
-            </View>
-            <View style={[styles.countBadge, { backgroundColor: 'rgba(245, 158, 11, 0.18)' }]}>
-              <Text style={[styles.countText, { color: '#f59e0b' }]}>{notiCount}</Text>
             </View>
           </TouchableOpacity>
 

@@ -80,8 +80,6 @@ class User(db.Model):
     license_number = db.Column(db.String(50))
     is_driver = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    trips = db.relationship('Trip', backref='driver', lazy=True)
-    notifications = db.relationship('Notification', backref='user', lazy=True)
 
 class Trip(db.Model):
     __tablename__ = 'trips'
@@ -101,17 +99,6 @@ class Trip(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     accepted_at = db.Column(db.DateTime)
     completed_at = db.Column(db.DateTime)
-
-class Notification(db.Model):
-    __tablename__ = 'notifications'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    title = db.Column(db.String(100), nullable=False)
-    message = db.Column(db.Text, nullable=False)
-    type = db.Column(db.String(20))  # trip_request, trip_accepted, trip_rejected, system
-    is_read = db.Column(db.Boolean, default=False)
-    trip_id = db.Column(db.Integer, db.ForeignKey('trips.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # Routes
 @app.route('/api/signup', methods=['POST'])
@@ -329,15 +316,6 @@ def accept_trip(trip_id):
         trip.driver_id = driver_id
         trip.accepted_at = datetime.utcnow()
         
-        # Create notification for driver
-        notification = Notification(
-            user_id=driver_id,
-            title='Trip Accepted',
-            message=f'You have accepted the trip from {trip.pickup_location} to {trip.dropoff_location}',
-            type='trip_accepted',
-            trip_id=trip.id
-        )
-        db.session.add(notification)
         db.session.commit()
         
         return jsonify({'message': 'Trip accepted successfully'}), 200
@@ -377,15 +355,6 @@ def reject_trip(trip_id):
         
         trip.status = 'rejected'
         
-        # Create notification for driver
-        notification = Notification(
-            user_id=driver_id,
-            title='Trip Rejected',
-            message=f'You have rejected the trip from {trip.pickup_location} to {trip.dropoff_location}',
-            type='trip_rejected',
-            trip_id=trip.id
-        )
-        db.session.add(notification)
         db.session.commit()
         
         return jsonify({'message': 'Trip rejected successfully'}), 200
@@ -424,44 +393,9 @@ def complete_trip(trip_id):
         trip.status = 'completed'
         trip.completed_at = datetime.utcnow()
         
-        # Create notification for driver
-        notification = Notification(
-            user_id=trip.driver_id,
-            title='Trip Completed',
-            message=f'Trip from {trip.pickup_location} to {trip.dropoff_location} has been completed',
-            type='system',
-            trip_id=trip.id
-        )
-        db.session.add(notification)
         db.session.commit()
         
         return jsonify({'message': 'Trip completed successfully'}), 200
-
-
-@app.route('/api/notifications/<int:user_id>', methods=['GET'])
-def get_notifications(user_id):
-    notifications = Notification.query.filter_by(user_id=user_id).order_by(Notification.created_at.desc()).all()
-    
-    return jsonify([{
-        'id': notif.id,
-        'title': notif.title,
-        'message': notif.message,
-        'type': notif.type,
-        'is_read': notif.is_read,
-        'trip_id': notif.trip_id,
-        'created_at': notif.created_at.isoformat()
-    } for notif in notifications]), 200
-
-@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
-def mark_notification_read(notification_id):
-    notification = Notification.query.get(notification_id)
-    if not notification:
-        return jsonify({'error': 'Notification not found'}), 404
-    
-    notification.is_read = True
-    db.session.commit()
-    
-    return jsonify({'message': 'Notification marked as read'}), 200
 
 @app.route('/api/trips', methods=['POST'])
 def create_trip():
@@ -482,18 +416,6 @@ def create_trip():
     
     db.session.add(trip)
     db.session.commit()
-    
-    # Notify all drivers
-    drivers = User.query.filter_by(is_driver=True).all()
-    for driver in drivers:
-        notification = Notification(
-            user_id=driver.id,
-            title='New Trip Request',
-            message=f'New trip from {trip.pickup_location} to {trip.dropoff_location}',
-            type='trip_request',
-            trip_id=trip.id
-        )
-        db.session.add(notification)
     
     db.session.commit()
     
