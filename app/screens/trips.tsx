@@ -1,10 +1,10 @@
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loadSession, session, tripsAPI } from '@/services/api';
+import { scheduleTripNotifications } from '@/services/notifications';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { scheduleTripNotifications } from '@/services/notifications';
+import { Alert, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 
 
@@ -53,27 +53,22 @@ export default function TripsScreen() {
   const driverId = session.user?.id || 'cf6912d9-6617-482b-aacf-dd034c780185';
   const agencyId = session.user?.agency_id || '6e7cdb44-603c-46c4-a4ca-198334c34314';
 
-  // Helper function to check if trip is current (within 15 minutes of start time)
+  // Helper function to check if trip is current (start time has arrived or passed)
   const isCurrentTrip = (trip: any) => {
     const tripStart = trip.start_time || trip.start_date;
     if (!tripStart) return true; // Show by default if no start time specified
     const now = new Date();
     const startTime = new Date(tripStart);
-    const timeDiff = startTime.getTime() - now.getTime();
-    const minutesDiff = timeDiff / (1000 * 60);
-    // Current if within 15 minutes before start time or already started but not finished yet
-    return minutesDiff <= 15 && minutesDiff >= -120; // Show from 15 min before until 2 hours after
+    return startTime <= now;
   };
 
-  // Helper function to check if trip is upcoming (more than 15 minutes in future)
+  // Helper function to check if trip is upcoming (start time is in the future)
   const isUpcomingTrip = (trip: any) => {
     const tripStart = trip.start_time || trip.start_date;
     if (!tripStart) return false;
     const now = new Date();
     const startTime = new Date(tripStart);
-    const timeDiff = startTime.getTime() - now.getTime();
-    const minutesDiff = timeDiff / (1000 * 60);
-    return minutesDiff > 15;
+    return startTime > now;
   };
 
   useEffect(() => {
@@ -149,64 +144,9 @@ export default function TripsScreen() {
 
       // Mock trips for frontend display with time-based scheduling
       const now = new Date();
-      const mockTrips: Trip[] = [
-        {
-          id: 'mock-1',
-          passenger_name: 'Aditi Sharma (Mock - Current)',
-          passenger_phone: '9876543210',
-          pickup_location: 'Coimbatore Airport, Coimbatore',
-          pickup_lat: 11.03,
-          pickup_lng: 77.04,
-          dropoff_location: 'Gandhipuram Bus Stand, Coimbatore',
-          dropoff_lat: 11.02,
-          dropoff_lng: 76.97,
-          status: 'accepted',
-          fare: 350,
-          distance: 12.5,
-          created_at: new Date().toISOString(),
-          start_time: new Date(now.getTime() + 10 * 60000).toISOString() // 10 minutes from now
-        },
-        {
-          id: 'mock-2',
-          passenger_name: 'Rajesh Kumar (Mock - Upcoming)',
-          passenger_phone: '9876543211',
-          pickup_location: 'Railway Station, Coimbatore',
-          pickup_lat: 10.99,
-          pickup_lng: 76.96,
-          dropoff_location: 'PSG College of Technology, Coimbatore',
-          dropoff_lat: 11.02,
-          dropoff_lng: 77.00,
-          status: 'accepted',
-          fare: 220,
-          distance: 6.8,
-          created_at: new Date().toISOString(),
-          start_time: new Date(now.getTime() + 2 * 3600000).toISOString() // 2 hours from now
-        },
-        {
-          id: 'mock-3',
-          passenger_name: 'Meena Patel (Mock - Completed)',
-          passenger_phone: '9876543212',
-          pickup_location: 'Brookefields Mall, Coimbatore',
-          pickup_lat: 11.01,
-          pickup_lng: 76.96,
-          dropoff_location: 'TIDEL Park, Coimbatore',
-          dropoff_lat: 11.02,
-          dropoff_lng: 77.03,
-          status: 'completed',
-          fare: 400,
-          distance: 14.2,
-          created_at: new Date(Date.now() - 3600000).toISOString(),
-          start_time: new Date(Date.now() - 7200000).toISOString() // 2 hours ago
-        }
-      ];
 
-      // Filter mock trips based on time
-      const filteredMocks = mockTrips.filter(t => {
-        if (activeTab === 'current') return isCurrentTrip(t);
-        if (activeTab === 'upcoming') return isUpcomingTrip(t);
-        if (activeTab === 'completed') return t.status === 'completed';
-        return true;
-      });
+
+
       setTrips([...formattedDbTrips]);
     } catch (error: any) {
       if (error.response?.status === 401) {
