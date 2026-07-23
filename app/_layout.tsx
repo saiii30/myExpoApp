@@ -50,17 +50,51 @@ function RootLayoutContent() {
 
         knownTripIds.current = currentIds;
 
-        // Schedule/refresh 15-10-5 min reminders for all trips with a start time
+        // --- Logic to find the single "current" trip ---
+        const activeTrips = trips.filter((t: any) => {
+          return (
+            t.status !== 'completed' &&
+            t.is_active !== false &&
+            t.driver_response !== 'declined'
+          );
+        });
+
+        activeTrips.sort((a: any, b: any) => {
+          const timeA = a.start_date && a.one_way_start_time ? new Date(`${a.start_date}T${a.one_way_start_time}`).getTime() : 0;
+          const timeB = b.start_date && b.one_way_start_time ? new Date(`${b.start_date}T${b.one_way_start_time}`).getTime() : 0;
+          return timeA - timeB;
+        });
+
+        let currentTripId: string | null = null;
+        if (activeTrips.length > 0) {
+          const earliestTrip = activeTrips[0];
+          if (earliestTrip.start_date && earliestTrip.one_way_start_time) {
+            const startTime = new Date(`${earliestTrip.start_date}T${earliestTrip.one_way_start_time}`).getTime();
+            const now = new Date().getTime();
+            const diffMinutes = (startTime - now) / (1000 * 60);
+
+            // A trip is "current" if it's starting within 20 minutes or has already started.
+            if (diffMinutes <= 20) {
+              currentTripId = String(earliestTrip.id);
+            }
+          } else {
+            currentTripId = String(earliestTrip.id);
+          }
+        }
+        // --- End of "current" trip logic ---
+
+
+        // Schedule/refresh reminders for ONLY the current trip
         const notificationTrips: TripNotification[] = trips
           .filter((t: any) => {
-            const isCompleted = t.status === 'completed' || t.is_active === false || t.driver_response === 'declined';
-            return !isCompleted && t.start_date && t.one_way_start_time;
+            // Only schedule notifications for the trip that is currently considered "current".
+            return currentTripId !== null && String(t.id) === currentTripId;
           })
           .map((t: any) => ({
             tripId: t.id,
             passengerName: t.company_name ? `Company: ${t.company_name}` : 'Passenger',
             pickupLocation: t.starting_point || 'Unknown Start',
-            startTime: `${t.start_date}T${t.one_way_start_time}`,
+            startTime: `${t.start_date}T${t.one_way_start_time || t.two_way_start_time}`, // Construct local time
             isPending: t.driver_response !== 'accepted',
           }));
 

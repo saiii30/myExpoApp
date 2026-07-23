@@ -55,23 +55,7 @@ export default function TripsScreen() {
   const driverId = session.user?.id || 'cf6912d9-6617-482b-aacf-dd034c780185';
   const agencyId = session.user?.agency_id || '6e7cdb44-603c-46c4-a4ca-198334c34314';
 
-  // Helper function to check if trip is current (start time has arrived or passed)
-  const isCurrentTrip = (trip: any) => {
-    const tripStart = trip.start_time || trip.start_date;
-    if (!tripStart) return true; // Show by default if no start time specified
-    const now = new Date();
-    const startTime = new Date(tripStart);
-    return startTime <= now;
-  };
-
-  // Helper function to check if trip is upcoming (start time is in the future)
-  const isUpcomingTrip = (trip: any) => {
-    const tripStart = trip.start_time || trip.start_date;
-    if (!tripStart) return false;
-    const now = new Date();
-    const startTime = new Date(tripStart);
-    return startTime > now;
-  };
+  
 
   useEffect(() => {
     const init = async () => {
@@ -86,26 +70,82 @@ export default function TripsScreen() {
       setLoading(true);
       const data = await tripsAPI.getTrips(undefined, driverId, agencyId);
 
-      // Filter database trips according to activeTab status logic
-      const filteredDbTrips = data.filter((t: any) => {
-        const isCompleted = t.status === 'completed' || t.is_active === false || t.driver_response === 'declined';
+      
 
-        if (activeTab === 'completed') {
-          return isCompleted;
-        } else {
-          // Current and Upcoming tabs should only show active, non-completed, non-declined trips
-          if (isCompleted) {
-            return false;
-          }
+      // STEP 1: Get all active trips
+const activeTrips = data.filter((t: any) => {
+  return (
+    t.status !== 'completed' &&
+    t.is_active !== false &&
+    t.driver_response !== 'declined'
+  );
+});
 
-          if (activeTab === 'current') {
-            return isCurrentTrip(t);
-          } else if (activeTab === 'upcoming') {
-            return isUpcomingTrip(t);
-          }
-        }
-        return true;
-      });
+// STEP 2: Sort by start time (earliest first)
+activeTrips.sort((a: any, b: any) => {
+  const timeA =
+    a.start_date && a.one_way_start_time
+      ? new Date(`${a.start_date}T${a.one_way_start_time}`).getTime()
+      : 0;
+
+  const timeB =
+    b.start_date && b.one_way_start_time
+      ? new Date(`${b.start_date}T${b.one_way_start_time}`).getTime()
+      : 0;
+
+  return timeA - timeB;
+});
+
+// STEP 3: Decide which trip should be Current
+let currentTripId: string | null = null;
+
+if (activeTrips.length > 0) {
+  const earliestTrip = activeTrips[0];
+
+  if (earliestTrip.start_date && earliestTrip.one_way_start_time) {
+    const startTime = new Date(
+      `${earliestTrip.start_date}T${earliestTrip.one_way_start_time}`
+    ).getTime();
+
+    const now = new Date().getTime();
+    const diffMinutes = (startTime - now) / (1000 * 60);
+
+    // Trip becomes Current when 20 mins away or already started
+    if (diffMinutes <= 20) {
+      currentTripId = String(earliestTrip.id);
+    }
+  } else {
+    // If no time available, make earliest trip current
+    currentTripId = String(earliestTrip.id);
+  }
+}
+
+// STEP 4: Filter trips for tabs
+const filteredDbTrips = data.filter((t: any) => {
+  const isCompleted =
+    t.status === 'completed' ||
+    t.is_active === false ||
+    t.driver_response === 'declined';
+
+  if (activeTab === 'completed') {
+    return isCompleted;
+  }
+
+  if (isCompleted) return false;
+
+  if (activeTab === 'current') {
+  return currentTripId !== null && String(t.id) === currentTripId;
+}
+
+if (activeTab === 'upcoming') {
+  return currentTripId === null
+    ? true
+    : String(t.id) !== currentTripId;
+}
+
+  return false;
+});
+
 
       // Format database trip objects
       const formattedDbTrips = filteredDbTrips.map((ts: any) => {
@@ -144,7 +184,7 @@ export default function TripsScreen() {
             const date = ts.start_date; // e.g., "2026-07-04"
             const time = ts.one_way_start_time; // e.g., "13:30:00"
             if (date && time) {
-              return `${date}T${time}.000Z`; // Construct ISO string e.g., "2026-07-04T13:30:00.000Z"
+              return `${date}T${time}`; // Construct local time ISO string e.g., "2026-07-04T13:30:00"
             }
             return undefined;
           })(),
@@ -170,10 +210,9 @@ setTrips(newTrips);
 // SCHEDULE 15/10/5 MIN REMINDERS
 // --------------------
 const notificationTrips: TripNotification[] = data
-  .filter((t: any) => {
-    const isCompleted = t.status === 'completed' || t.is_active === false || t.driver_response === 'declined';
-    return !isCompleted && t.start_date && t.one_way_start_time;
-  })
+  .filter((t: any) => 
+    // Only schedule notifications for the trip that is currently considered "current".
+    currentTripId !== null && String(t.id) === currentTripId)
   .map((t: any) => ({
     tripId: t.id,
     passengerName: t.company_name ? `Company: ${t.company_name}` : 'Passenger',
@@ -297,6 +336,16 @@ await scheduleMultipleTripNotifications(notificationTrips);
       </View>
 
       <View style={[styles.detailsRow, { borderTopColor: colors.border }]}>
+        {item.start_time && (
+          <View style={styles.detailItem}>
+            <View style={styles.detailIconContainer}>
+              <FontAwesome5 name="clock" size={12} color="#38bdf8" />
+            </View>
+            <Text style={[styles.detailText, { color: colors.textSecondary }]}>
+              {new Date(item.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+            </Text>
+          </View>
+        )}
         {item.distance && (
           <View style={styles.detailItem}>
             <View style={styles.detailIconContainer}>

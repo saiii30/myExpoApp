@@ -1,8 +1,8 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { useState, useEffect } from 'react';
 import * as Notifications from 'expo-notifications';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function NotificationsScreen() {
   const [scheduledNotifs, setScheduledNotifs] = useState<Notifications.NotificationRequest[]>([]);
@@ -48,7 +48,7 @@ export default function NotificationsScreen() {
               <Text style={styles.cardBody}>{item.content.body}</Text>
               <Text style={styles.cardTime}>
                 {(item.trigger as any)?.type === 'date' 
-                  ? new Date((item.trigger as any).date).toLocaleString()
+                  ? new Date((item.trigger as any).date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
                   : 'Pending'}
               </Text>
             </View>

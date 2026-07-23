@@ -271,7 +271,7 @@ export default function TripDetailsScreen() {
         <View style={styles.detailRow}>
           <FontAwesome5 name="clock" size={18} color="#38bdf8" />
           <Text style={styles.detailLabel}>Created:</Text>
-          <Text style={styles.detailValue}>{new Date(trip.created_at).toLocaleString()}</Text>
+          <Text style={styles.detailValue}>{new Date(trip.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</Text>
         </View>
       </View>
 
