@@ -74,10 +74,10 @@ export const tripsAPI = {
     });
     return response.data;
   },
-  rejectTrip: async (tripId: string | number, driverId: string | number) => {
+  rejectTrip: async (tripId: string | number, driverId: string | number, reason?: string) => {
     const response = await api.put(`/trips/${tripId}/driver-response`, {
       driver_response: 'declined',
-      driver_reason: 'Rejected by driver'
+      driver_reason: reason || 'Rejected by driver'
     });
     return response.data;
   },

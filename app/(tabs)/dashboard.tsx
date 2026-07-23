@@ -3,13 +3,17 @@ import { session, tripsAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, Vibration, Alert } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, Vibration, Alert, Modal, TextInput } from 'react-native';
 
 export default function Dashboard() {
   const [availableCount, setAvailableCount] = useState<number | string>('-');
   const [myTripsCount, setMyTripsCount] = useState<number | string>('-');
   const [urgentTrip, setUrgentTrip] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rejectTripId, setRejectTripId] = useState<string | number | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const theme = useColorScheme();
   const isDark = theme === 'dark';
@@ -89,18 +93,42 @@ export default function Dashboard() {
     return () => Vibration.cancel();
   }, [urgentTrip]);
 
+  const promptReject = (tripId: string | number) => {
+    setRejectTripId(tripId);
+    setRejectReason('');
+    setRejectModalVisible(true);
+  };
+
+  const submitReject = async () => {
+    if (!rejectTripId) return;
+    if (!rejectReason.trim()) {
+      Alert.alert('Required', 'Please enter a reason for rejecting the trip.');
+      return;
+    }
+    
+    setRejectModalVisible(false);
+    
+    try {
+      await tripsAPI.rejectTrip(rejectTripId, driverId, rejectReason);
+      Alert.alert('Declined', 'Trip Declined.');
+      setUrgentTrip(null);
+      Vibration.cancel();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to reject trip.');
+    }
+  };
+
   const handleUrgentAction = async (action: 'accept' | 'decline') => {
     if (!urgentTrip) return;
     try {
       if (action === 'accept') {
         await tripsAPI.acceptTrip(urgentTrip.id, driverId);
         Alert.alert('Success', 'Trip Accepted!');
+        setUrgentTrip(null);
+        Vibration.cancel();
       } else {
-        await tripsAPI.rejectTrip(urgentTrip.id, driverId);
-        Alert.alert('Declined', 'Trip Declined.');
+        promptReject(urgentTrip.id);
       }
-      setUrgentTrip(null);
-      Vibration.cancel();
     } catch (e) {
       Alert.alert('Error', 'Failed to update trip status.');
     }
@@ -252,6 +280,47 @@ export default function Dashboard() {
         <FontAwesome5 name="sign-out-alt" size={14} color="#ef4444" />
         <Text style={styles.logoutText}>Terminate Active Session</Text>
       </TouchableOpacity>
+
+      {/* Reject Reason Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={rejectModalVisible}
+        onRequestClose={() => setRejectModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Reject Trip</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>Please provide a reason for rejecting this trip.</Text>
+            
+            <TextInput
+              style={[styles.modalInput, { color: colors.textPrimary, borderColor: colors.border }]}
+              placeholder="e.g., Too far, Vehicle issue..."
+              placeholderTextColor="#94a3b8"
+              value={rejectReason}
+              onChangeText={setRejectReason}
+              multiline
+              numberOfLines={3}
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton, { borderColor: colors.border }]}
+                onPress={() => setRejectModalVisible(false)}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.textPrimary }]}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalSubmitButton]}
+                onPress={submitReject}
+              >
+                <Text style={styles.modalSubmitText}>Submit Reject</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -535,5 +604,66 @@ const styles = StyleSheet.create({
   urgentBtnText: {
     color: '#fff',
     fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    marginBottom: 20,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalCancelButton: {
+    borderWidth: 1,
+    marginRight: 12,
+  },
+  modalSubmitButton: {
+    backgroundColor: '#ef4444',
+  },
+  modalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalSubmitText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

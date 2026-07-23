@@ -5,7 +5,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { isRunningInExpoGo } from 'expo';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View, Modal, TextInput } from 'react-native';
 
 
 
@@ -35,6 +35,9 @@ export default function TripsScreen() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rejectTripId, setRejectTripId] = useState<string | number | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
   const [activeTab, setActiveTab] = useState<'current' | 'upcoming' | 'completed'>('current');
 
   const theme = useColorScheme();
@@ -262,18 +265,32 @@ await scheduleMultipleTripNotifications(notificationTrips);
     }
   };
 
-  const handleReject = async (tripId: string | number) => {
+  const promptReject = (tripId: string | number) => {
+    setRejectTripId(tripId);
+    setRejectReason('');
+    setRejectModalVisible(true);
+  };
+
+  const submitReject = async () => {
+    if (!rejectTripId) return;
+    if (!rejectReason.trim()) {
+      Alert.alert('Required', 'Please enter a reason for rejecting the trip.');
+      return;
+    }
+    
+    setRejectModalVisible(false);
+    
     try {
-      if (String(tripId).startsWith('mock-')) {
+      if (String(rejectTripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip rejected locally');
-        setTrips(prev => prev.filter(t => t.id !== tripId));
+        setTrips(prev => prev.filter(t => t.id !== rejectTripId));
         return;
       }
-      await tripsAPI.rejectTrip(tripId, driverId);
+      await tripsAPI.rejectTrip(rejectTripId, driverId, rejectReason);
       Alert.alert('Success', 'Trip rejected');
       
       if (Platform.OS === 'android' && isRunningInExpoGo()) {
-        const trip = trips.find(t => t.id === tripId);
+        const trip = trips.find(t => t.id === rejectTripId);
         const name = trip ? trip.passenger_name : 'Passenger';
         showLocalNotification('Trip Rejected', `You have rejected the trip for ${name}.`);
       }
@@ -366,7 +383,7 @@ await scheduleMultipleTripNotifications(notificationTrips);
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={[styles.actionButton, styles.rejectButton]}
-            onPress={() => handleReject(item.id)}
+            onPress={() => promptReject(item.id)}
           >
             <Text style={styles.actionButtonText}>Reject</Text>
           </TouchableOpacity>
@@ -453,6 +470,47 @@ await scheduleMultipleTripNotifications(notificationTrips);
           }
         />
       )}
+
+      {/* Reject Reason Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={rejectModalVisible}
+        onRequestClose={() => setRejectModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Reject Trip</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>Please provide a reason for rejecting this trip.</Text>
+            
+            <TextInput
+              style={[styles.modalInput, { color: colors.textPrimary, borderColor: colors.border }]}
+              placeholder="e.g., Too far, Vehicle issue..."
+              placeholderTextColor="#94a3b8"
+              value={rejectReason}
+              onChangeText={setRejectReason}
+              multiline
+              numberOfLines={3}
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton, { borderColor: colors.border }]}
+                onPress={() => setRejectModalVisible(false)}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.textPrimary }]}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalSubmitButton]}
+                onPress={submitReject}
+              >
+                <Text style={styles.modalSubmitText}>Submit Reject</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -679,5 +737,66 @@ const styles = StyleSheet.create({
     marginTop: 60,
     fontSize: 16,
     color: '#64748b',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    marginBottom: 20,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalCancelButton: {
+    borderWidth: 1,
+    marginRight: 12,
+  },
+  modalSubmitButton: {
+    backgroundColor: '#ef4444',
+  },
+  modalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalSubmitText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
