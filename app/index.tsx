@@ -1,4 +1,5 @@
 import { authAPI, setAuthToken, session } from '@/services/api';
+import { initializePushNotifications, setupNotificationListeners } from '@/services/notifications';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -67,6 +68,12 @@ export default function LoginScreen() {
           ...response.user,
           agency_id: selectedAgency.id,
         };
+
+        // Initialize push notifications for the logged in user
+        if (session.user && session.user.id) {
+          initializePushNotifications(session.user.id);
+          setupNotificationListeners();
+        }
         
         Alert.alert('Success', 'Login successful');
         router.replace('/dashboard'); // Navigate to tabs

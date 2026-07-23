@@ -1,6 +1,8 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loadSession, session, tripsAPI } from '@/services/api';
+import { cancelTripNotifications, scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
 import { FontAwesome5 } from '@expo/vector-icons';
+import { isRunningInExpoGo } from 'expo';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -167,6 +169,13 @@ export default function TripsScreen() {
       }
       await tripsAPI.acceptTrip(tripId, driverId);
       Alert.alert('Success', 'Trip accepted successfully');
+      
+      if (Platform.OS === 'android' && isRunningInExpoGo()) {
+        const trip = trips.find(t => t.id === tripId);
+        const name = trip ? trip.passenger_name : 'Passenger';
+        showLocalNotification('Trip Accepted', `You have accepted the trip for ${name}.`);
+      }
+      
       loadTrips();
     } catch (error) {
       Alert.alert('Error', 'Failed to accept trip');
@@ -182,6 +191,13 @@ export default function TripsScreen() {
       }
       await tripsAPI.rejectTrip(tripId, driverId);
       Alert.alert('Success', 'Trip rejected');
+      
+      if (Platform.OS === 'android' && isRunningInExpoGo()) {
+        const trip = trips.find(t => t.id === tripId);
+        const name = trip ? trip.passenger_name : 'Passenger';
+        showLocalNotification('Trip Rejected', `You have rejected the trip for ${name}.`);
+      }
+      
       loadTrips();
     } catch (error) {
       Alert.alert('Error', 'Failed to reject trip');
@@ -197,6 +213,13 @@ export default function TripsScreen() {
       }
       await tripsAPI.completeTrip(tripId);
       Alert.alert('Success', 'Trip completed successfully');
+      
+      if (Platform.OS === 'android' && isRunningInExpoGo()) {
+        const trip = trips.find(t => t.id === tripId);
+        const name = trip ? trip.passenger_name : 'Passenger';
+        showLocalNotification('Trip Completed', `You have completed the trip for ${name}.`);
+      }
+      
       loadTrips();
     } catch (error) {
       Alert.alert('Error', 'Failed to complete trip');

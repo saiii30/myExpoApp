@@ -2,8 +2,11 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
+import requests
+import threading
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -79,6 +82,14 @@ class User(db.Model):
     vehicle_number = db.Column(db.String(20))
     license_number = db.Column(db.String(50))
     is_driver = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class PushToken(db.Model):
+    __tablename__ = 'push_tokens'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(100), unique=True, nullable=False)
+    token = db.Column(db.String(255), nullable=False)
+    platform = db.Column(db.String(20))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Trip(db.Model):
@@ -158,6 +169,91 @@ def login():
             'is_driver': user.is_driver
         }
     }), 200
+
+def send_push(user_id, title, body):
+    try:
+        with app.app_context():
+            token_record = PushToken.query.filter_by(user_id=str(user_id)).first()
+            if not token_record:
+                print(f"No push token registered for user {user_id}")
+                return False
+            token = token_record.token
+
+        response = requests.post(
+            'https://exp.host/--/api/v2/push/send',
+            json={
+                'to': token,
+                'title': title,
+                'body': body,
+                'sound': 'default'
+            },
+            timeout=5
+        )
+        print(f"Push response for {user_id}: {response.status_code}")
+        return response.ok
+    except Exception as e:
+        print(f"Error sending push to {user_id}: {e}")
+        return False
+
+def schedule_reminders(user_id, start_time, passenger_name):
+    reminders = [15, 10, 5]
+    for mins in reminders:
+        reminder_time = start_time - timedelta(minutes=mins)
+        
+        while True:
+            wait_seconds = (reminder_time - datetime.utcnow()).total_seconds()
+            if wait_seconds <= 0:
+                break
+            time.sleep(min(10, wait_seconds))
+            
+        send_push(
+            user_id,
+            'Trip Reminder',
+            f'Trip for {passenger_name} starts in {mins} minutes'
+        )
+
+@app.route('/api/push-token', methods=['POST'])
+def register_push_token():
+    data = request.get_json() or {}
+    token = data.get('token')
+    user_id = data.get('user_id')
+    platform = data.get('platform')
+    
+    if not token or not user_id:
+        return jsonify({'error': 'Missing token or user_id'}), 400
+        
+    token_record = PushToken.query.filter_by(user_id=str(user_id)).first()
+    if token_record:
+        token_record.token = token
+        token_record.platform = platform
+    else:
+        token_record = PushToken(user_id=str(user_id), token=token, platform=platform)
+        db.session.add(token_record)
+        
+    db.session.commit()
+    return jsonify({'message': 'Push token registered successfully'}), 200
+
+@app.route('/api/test-push', methods=['POST'])
+def test_push_route():
+    data = request.get_json() or {}
+    user_id = data.get('user_id') or data.get('driver_id')
+    title = data.get('title', 'Test Push Notification')
+    body = data.get('body', 'This is a test notification from the Flask backend!')
+    
+    if not user_id:
+        # Fallback: get the first registered push token in the DB
+        first_token = PushToken.query.first()
+        if first_token:
+            user_id = first_token.user_id
+            print(f"No user_id specified. Using first registered user in database: {user_id}")
+        else:
+            return jsonify({'error': 'No registered push tokens found in the database. Please connect a device first.'}), 404
+            
+    success = send_push(user_id, title, body)
+    if success:
+        return jsonify({'message': f'Test push notification sent successfully to user {user_id}'}), 200
+    else:
+        return jsonify({'error': f'Failed to send push notification to user {user_id}. Check backend server logs.'}), 500
 
 @app.route('/api/trips', methods=['GET'])
 def get_trips():
@@ -299,6 +395,31 @@ def accept_trip(trip_id):
         # Map driver_id parameter to the postgres driver UUID
         ts.driver_id = 'cf6912d9-6617-482b-aacf-dd034c780185'
         db.session.commit()
+        
+        # Retrieve driver push token and trigger notifications
+        passenger_name = f"Company: {ts.company_name}"
+        if ts.route_point:
+            try:
+                import json
+                points = json.loads(ts.route_point)
+                if isinstance(points, list) and len(points) > 0:
+                    names = [p.get('passenger_name') for p in points if p.get('passenger_name')]
+                    if names:
+                        passenger_name = ", ".join(names)
+            except Exception:
+                pass
+                
+        # Send instant push confirmation
+        send_push(ts.driver_id, 'Trip Accepted', f'You have accepted the trip for {passenger_name}.')
+        
+        # Schedule reminders if start_date is in the future
+        if ts.start_date and ts.start_date > datetime.utcnow():
+            threading.Thread(
+                target=schedule_reminders,
+                args=(ts.driver_id, ts.start_date, passenger_name),
+                daemon=True
+            ).start()
+            
         return jsonify({'message': 'Trip schedule accepted successfully'}), 200
     else:
         try:
@@ -317,6 +438,9 @@ def accept_trip(trip_id):
         trip.accepted_at = datetime.utcnow()
         
         db.session.commit()
+        
+        # Send instant push confirmation for SQLite trip
+        send_push(driver_id, 'Trip Accepted', f'You have accepted the trip for {trip.passenger_name}.')
         
         return jsonify({'message': 'Trip accepted successfully'}), 200
 
