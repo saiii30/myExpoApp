@@ -196,12 +196,19 @@ const scheduleLocalTripReminders = async (trip: TripNotification) => {
   await cancelTripNotifications(trip.tripId);
 
   const startTime = new Date(trip.startTime);
-  const now = new Date();
-  const timeUntilStart = startTime.getTime() - now.getTime();
+const now = new Date();
+const timeUntilStart = startTime.getTime() - now.getTime();
 
-  if (timeUntilStart <= 0) return;
+console.log('START TIME:', startTime.toString());
+console.log('NOW:', now.toString());
+console.log('MINUTES LEFT:', timeUntilStart / (1000 * 60));
 
-  const intervals = [180, 15, 10, 5];
+if (timeUntilStart <= 0) {
+  console.log('Trip already started or is in the past. Not scheduling.');
+  return;
+}
+
+  const intervals = [ 15, 10, 5];
   for (const minutes of intervals) {
     const reminderTime = new Date(startTime.getTime() - minutes * 60 * 1000);
     if (reminderTime > now) {

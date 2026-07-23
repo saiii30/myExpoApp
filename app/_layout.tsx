@@ -6,7 +6,7 @@ import 'react-native-reanimated';
 import { ThemeProvider as AppThemeProvider, useAppTheme } from '@/hooks/ThemeContext';
 
 import { session, tripsAPI } from '@/services/api';
-import { cancelTripNotifications, scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
+import { scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
 import { useEffect, useRef } from 'react';
 
 export const unstable_settings = {
@@ -94,22 +94,19 @@ function RootLayoutContent() {
             tripId: t.id,
             passengerName: t.company_name ? `Company: ${t.company_name}` : 'Passenger',
             pickupLocation: t.starting_point || 'Unknown Start',
-            startTime: `${t.start_date}T${t.one_way_start_time || t.two_way_start_time}`, // Construct local time
+            startTime: `${t.start_date}T${t.one_way_start_time }`, // Construct local time
             isPending: t.driver_response !== 'accepted',
           }));
 
-        for (const trip of notificationTrips) {
-          await cancelTripNotifications(trip.tripId);
-        }
-        console.log(`[Notification Fallback] Cleared existing notifications for ${notificationTrips.length} trips`);
-        await scheduleMultipleTripNotifications(notificationTrips);
+        // Schedule reminders only (do not cancel every 10 seconds)
+await scheduleMultipleTripNotifications(notificationTrips);
       } catch (e) {
         console.log('Trip polling failed', e);
       }
     };
 
     checkNewTrips();
-    const interval = setInterval(checkNewTrips, 10000);
+    const interval = setInterval(checkNewTrips, 60000);
     return () => clearInterval(interval);
   }, []);
 

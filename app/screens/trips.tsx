@@ -342,7 +342,7 @@ await scheduleMultipleTripNotifications(notificationTrips);
               <FontAwesome5 name="clock" size={12} color="#38bdf8" />
             </View>
             <Text style={[styles.detailText, { color: colors.textSecondary }]}>
-              {new Date(item.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+              {new Date(item.start_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
             </Text>
           </View>
         )}
