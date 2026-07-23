@@ -178,7 +178,7 @@ const notificationTrips: TripNotification[] = data
     tripId: t.id,
     passengerName: t.company_name ? `Company: ${t.company_name}` : 'Passenger',
     pickupLocation: t.starting_point || 'Unknown Start',
-    startTime: `${t.start_date}T${t.one_way_start_time}.000Z`,
+    startTime: `${t.start_date}T${t.one_way_start_time}`,
   }));
 
 // Cancel old reminders first (avoid duplicates)
