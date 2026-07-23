@@ -34,6 +34,7 @@ interface Trip {
 export default function TripsScreen() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
+  
   const [activeTab, setActiveTab] = useState<'current' | 'upcoming' | 'completed'>('current');
 
   const theme = useColorScheme();
@@ -137,7 +138,7 @@ export default function TripsScreen() {
           fare: ts.distance_km ? Math.round(ts.distance_km * 15) : 100,
           distance: ts.distance_km ? Math.round(ts.distance_km * 10) / 10 : null,
           created_at: ts.created_at || new Date().toISOString(),
-          start_time: ts.start_time || ts.created_at,
+          start_time: ts.start_time, // Use the full start_time from the API
           source: 'postgres'
         };
       });
@@ -147,7 +148,33 @@ export default function TripsScreen() {
 
 
 
-      setTrips([...formattedDbTrips]);
+      const newTrips = [...formattedDbTrips];
+setTrips(newTrips);
+
+// --------------------
+// NEW TRIP NOTIFICATION
+// --------------------
+
+
+// --------------------
+// SCHEDULE 15/10/5 MIN REMINDERS
+// --------------------
+const notificationTrips: TripNotification[] = newTrips
+  .filter(t => t.start_time) // only trips with start time
+  .map(t => ({
+    tripId: t.id,
+    passengerName: t.passenger_name,
+    pickupLocation: t.pickup_location,
+    startTime: t.start_time!, // ISO string
+  }));
+
+// Cancel old reminders first (avoid duplicates)
+for (const trip of notificationTrips) {
+  await cancelTripNotifications(trip.tripId);
+}
+
+// Schedule new reminders
+await scheduleMultipleTripNotifications(notificationTrips);
     } catch (error: any) {
       if (error.response?.status === 401) {
         Alert.alert('Session Expired', 'Please log in again');

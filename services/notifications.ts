@@ -1,5 +1,5 @@
-import * as Device from 'expo-device';
 import { isRunningInExpoGo } from 'expo';
+import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import { api } from './api';
 
@@ -181,23 +181,21 @@ const scheduleLocalTripReminders = async (trip: TripNotification) => {
 
   const intervals = [15, 10, 5];
   for (const minutes of intervals) {
-    const triggerTime = timeUntilStart - (minutes * 60 * 1000);
-    if (triggerTime > 0) {
-      const triggerDate = new Date(now.getTime() + triggerTime);
+    const reminderTime = new Date(startTime.getTime() - minutes * 60 * 1000);
+    if (reminderTime > now) {
       await Notifications.scheduleNotificationAsync({
         identifier: `trip-${trip.tripId}-${minutes}min`,
         content: {
           title: `Trip Reminder - ${minutes} minutes`,
           body: `Trip for ${trip.passengerName} at ${trip.pickupLocation} starts in ${minutes} minutes`,
           data: { tripId: trip.tripId.toString(), minutes },
-          sound: true,
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: triggerDate,
+          date: reminderTime,
         } as any,
       });
-      console.log(`[Notification Fallback] Scheduled local ${minutes}m reminder for trip ${trip.tripId} at ${triggerDate.toISOString()}`);
+      console.log(`[Notification Fallback] Scheduled local ${minutes}m reminder for trip ${trip.tripId} at ${reminderTime.toISOString()}`);
     }
   }
 };

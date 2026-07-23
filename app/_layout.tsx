@@ -2,23 +2,84 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
-import { useAppTheme } from '@/hooks/ThemeContext';
-import { ThemeProvider as AppThemeProvider } from '@/hooks/ThemeContext';
+
+import { ThemeProvider as AppThemeProvider, useAppTheme } from '@/hooks/ThemeContext';
+
+import { session, tripsAPI } from '@/services/api';
+import { cancelTripNotifications, scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
+import { useEffect, useRef } from 'react';
 
 export const unstable_settings = {
   initialRouteName: 'index',
 };
 
 function RootLayoutContent() {
- 
   const { theme } = useAppTheme();
+
+  const knownTripIds = useRef<Set<string>>(new Set());
+  const isInitialized = useRef(false);
+
+  useEffect(() => {
+    const checkNewTrips = async () => {
+      try {
+        const trips = await tripsAPI.getTrips(
+          undefined,
+          session.user?.id,
+          session.user?.agency_id
+        );
+
+        const currentIds = new Set<string>(
+          trips.map((t: any) => String(t.id))
+        );
+
+        if (!isInitialized.current) {
+          knownTripIds.current = currentIds;
+          isInitialized.current = true;
+          return;
+        }
+
+        trips.forEach((trip: any) => {
+          const id = String(trip.id);
+          if (!knownTripIds.current.has(id)) {
+            showLocalNotification(
+              'New Trip Assigned',
+              `${trip.passenger_name || trip.company_name} • ${trip.pickup_location || trip.starting_point}`
+            );
+          }
+        });
+
+        knownTripIds.current = currentIds;
+
+        // Schedule/refresh 15-10-5 min reminders for all trips with a start time
+        const notificationTrips: TripNotification[] = trips
+          .filter((t: any) => t.start_time)
+          .map((t: any) => ({
+            tripId: t.id,
+            passengerName: t.passenger_name || t.company_name,
+            pickupLocation: t.pickup_location || t.starting_point,
+            startTime: t.start_time,
+          }));
+
+        for (const trip of notificationTrips) {
+          await cancelTripNotifications(trip.tripId);
+        }
+
+        await scheduleMultipleTripNotifications(notificationTrips);
+      } catch (e) {
+        console.log('Trip polling failed', e);
+      }
+    };
+
+    checkNewTrips();
+    const interval = setInterval(checkNewTrips, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <ThemeProvider value={theme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack initialRouteName="index">
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        {/* The screens below are not part of the tabs and can be pushed to from anywhere */}
         <Stack.Screen name="screens/trip-details" options={{ headerShown: false }} />
         <Stack.Screen name="screens/trips" options={{ headerShown: false }} />
         <Stack.Screen name="screens/map" options={{ headerShown: false }} />
