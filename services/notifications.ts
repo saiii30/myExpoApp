@@ -1,7 +1,7 @@
 import { isRunningInExpoGo } from 'expo';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
-import { api } from './api';
+import { api, tripsAPI } from './api';
 
 // Safely require expo-notifications, suppressing the console.error thrown by SDK 53+ in Expo Go on Android
 const getNotificationsModule = () => {
@@ -52,8 +52,22 @@ export interface TripNotification {
   passengerName: string;
   pickupLocation: string;
   startTime: string; // ISO string
+  isPending?: boolean;
 }
 
+// Set up interactive notification categories
+Notifications.setNotificationCategoryAsync('pending_trip', [
+  {
+    identifier: 'accept_trip',
+    buttonTitle: 'Accept',
+    options: { opensAppToForeground: false },
+  },
+  {
+    identifier: 'decline_trip',
+    buttonTitle: 'Decline',
+    options: { isDestructive: true, opensAppToForeground: false },
+  },
+]);
 // Request notification permissions
 export const requestNotificationPermissions = async (): Promise<boolean> => {
   if (!Device.isDevice) {
@@ -139,27 +153,35 @@ export const initializePushNotifications = async (userId: string) => {
 
 // Handle incoming push notifications
 export const setupNotificationListeners = () => {
-  if (Platform.OS === 'android' && isRunningInExpoGo()) {
-    return {
-      subscription: { remove: () => {} },
-      responseSubscription: { remove: () => {} }
-    };
-  }
-
   // Listen for notifications received while app is foregrounded
   const subscription = Notifications.addNotificationReceivedListener(notification => {
     console.log('Notification received:', notification);
   });
 
-  // Listen for user tapping on notification
-  const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+  // Listen for user tapping on notification or acting on a button
+  const responseSubscription = Notifications.addNotificationResponseReceivedListener(async response => {
     console.log('Notification response:', response);
     const data = response.notification.request.content.data;
+    const actionId = response.actionIdentifier;
     
-    // Handle navigation based on notification data
+    // Handle navigation or actions based on notification data
     if (data.tripId) {
-      // Navigate to trip details
-      // router.push(`/screens/trip-details?tripId=${data.tripId}`);
+      const driverId = 'cf6912d9-6617-482b-aacf-dd034c780185'; // fallback active driver
+
+      if (actionId === 'accept_trip') {
+        console.log(`Accepting trip ${data.tripId} via notification action`);
+        try {
+          await tripsAPI.acceptTrip(data.tripId as string, driverId);
+        } catch (e) { console.error('Failed to accept trip', e); }
+      } else if (actionId === 'decline_trip') {
+        console.log(`Declining trip ${data.tripId} via notification action`);
+        try {
+          await tripsAPI.rejectTrip(data.tripId as string, driverId);
+        } catch (e) { console.error('Failed to decline trip', e); }
+      } else {
+        // Just tapped the notification
+        // router.push(`/screens/trip-details?tripId=${data.tripId}`);
+      }
     }
   });
 
@@ -179,16 +201,24 @@ const scheduleLocalTripReminders = async (trip: TripNotification) => {
 
   if (timeUntilStart <= 0) return;
 
-  const intervals = [15, 10, 5];
+  const intervals = [180, 15, 10, 5];
   for (const minutes of intervals) {
     const reminderTime = new Date(startTime.getTime() - minutes * 60 * 1000);
     if (reminderTime > now) {
+      const title = trip.isPending 
+        ? `Action Required - Trip in ${minutes}m` 
+        : `Trip Reminder - ${minutes} minutes`;
+      const body = trip.isPending 
+        ? `Please ACCEPT or DECLINE your trip for ${trip.passengerName} starting at ${trip.pickupLocation} in ${minutes} minutes.`
+        : `Trip for ${trip.passengerName} at ${trip.pickupLocation} starts in ${minutes} minutes`;
+
       await Notifications.scheduleNotificationAsync({
         identifier: `trip-${trip.tripId}-${minutes}min`,
         content: {
-          title: `Trip Reminder - ${minutes} minutes`,
-          body: `Trip for ${trip.passengerName} at ${trip.pickupLocation} starts in ${minutes} minutes`,
+          title,
+          body,
           data: { tripId: trip.tripId.toString(), minutes },
+          categoryIdentifier: trip.isPending ? 'pending_trip' : undefined,
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,

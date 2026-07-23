@@ -3,11 +3,12 @@ import { session, tripsAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, Vibration, Alert } from 'react-native';
 
 export default function Dashboard() {
   const [availableCount, setAvailableCount] = useState<number | string>('-');
   const [myTripsCount, setMyTripsCount] = useState<number | string>('-');
+  const [urgentTrip, setUrgentTrip] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const theme = useColorScheme();
@@ -53,6 +54,18 @@ export default function Dashboard() {
 
         setAvailableCount(available);
         setMyTripsCount(myTrips);
+
+        const now = new Date();
+        const urgent = trips.find((t: any) => {
+          const isPending = !t.driver_response || t.driver_response === 'pending';
+          if (!isPending || t.status === 'completed' || t.is_active === false) return false;
+          if (!t.start_date || !t.one_way_start_time) return false;
+          
+          const startTime = new Date(`${t.start_date}T${t.one_way_start_time}`);
+          const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
+          return diffMinutes >= 0 && diffMinutes <= 5;
+        });
+        setUrgentTrip(urgent);
       } catch (error) {
         console.error('Failed to fetch dashboard counts:', error);
         setAvailableCount(0);
@@ -63,7 +76,35 @@ export default function Dashboard() {
     };
 
     fetchCounts();
+    const interval = setInterval(fetchCounts, 10000);
+    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (urgentTrip) {
+      Vibration.vibrate([1000, 1000, 1000], true);
+    } else {
+      Vibration.cancel();
+    }
+    return () => Vibration.cancel();
+  }, [urgentTrip]);
+
+  const handleUrgentAction = async (action: 'accept' | 'decline') => {
+    if (!urgentTrip) return;
+    try {
+      if (action === 'accept') {
+        await tripsAPI.acceptTrip(urgentTrip.id, driverId);
+        Alert.alert('Success', 'Trip Accepted!');
+      } else {
+        await tripsAPI.rejectTrip(urgentTrip.id, driverId);
+        Alert.alert('Declined', 'Trip Declined.');
+      }
+      setUrgentTrip(null);
+      Vibration.cancel();
+    } catch (e) {
+      Alert.alert('Error', 'Failed to update trip status.');
+    }
+  };
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -81,6 +122,23 @@ export default function Dashboard() {
           <Text style={styles.statusPillText}>ON DUTY</Text>
         </View>
       </View>
+
+      {urgentTrip && (
+        <View style={[styles.urgentCard, { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: colors.danger }]}>
+          <Text style={[styles.urgentTitle, { color: colors.danger }]}>URGENT: TRIP STARTING SOON</Text>
+          <Text style={[styles.urgentText, { color: colors.textPrimary }]}>
+            Trip for {urgentTrip.passenger_name || urgentTrip.company_name} at {urgentTrip.starting_point} starts in less than 5 minutes!
+          </Text>
+          <View style={styles.urgentActions}>
+            <TouchableOpacity style={[styles.urgentBtn, { backgroundColor: colors.success }]} onPress={() => handleUrgentAction('accept')}>
+              <Text style={styles.urgentBtnText}>ACCEPT TRIP</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.urgentBtn, { backgroundColor: colors.danger }]} onPress={() => handleUrgentAction('decline')}>
+              <Text style={styles.urgentBtnText}>DECLINE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Live Telemetry Widget */}
       {/* <View style={[styles.liveCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -447,5 +505,35 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ef4444',
     marginLeft: 8,
+  },
+  urgentCard: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+  },
+  urgentTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  urgentText: {
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  urgentActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  urgentBtn: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    marginHorizontal: 4,
+    alignItems: 'center',
+  },
+  urgentBtnText: {
+    color: '#fff',
+    fontWeight: '700',
   },
 });
