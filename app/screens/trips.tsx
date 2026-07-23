@@ -138,17 +138,27 @@ export default function TripsScreen() {
           fare: ts.distance_km ? Math.round(ts.distance_km * 15) : 100,
           distance: ts.distance_km ? Math.round(ts.distance_km * 10) / 10 : null,
           created_at: ts.created_at || new Date().toISOString(),
-          start_time: ts.start_time, // Use the full start_time from the API
+          start_time: (() => {
+            // Combine date and time to create a full ISO string for notifications.
+            // The backend provides date and time separately.
+            const date = ts.start_date; // e.g., "2026-07-04"
+            const time = ts.one_way_start_time; // e.g., "13:30:00"
+            if (date && time) {
+              return `${date}T${time}.000Z`; // Construct ISO string e.g., "2026-07-04T13:30:00.000Z"
+            }
+            return undefined;
+          })(),
           source: 'postgres'
         };
       });
 
-      // Mock trips for frontend display with time-based scheduling
-      const now = new Date();
+     
+    
 
 
 
       const newTrips = [...formattedDbTrips];
+      console.log(newTrips)
 setTrips(newTrips);
 
 // --------------------
@@ -159,13 +169,16 @@ setTrips(newTrips);
 // --------------------
 // SCHEDULE 15/10/5 MIN REMINDERS
 // --------------------
-const notificationTrips: TripNotification[] = newTrips
-  .filter(t => t.start_time) // only trips with start time
-  .map(t => ({
+const notificationTrips: TripNotification[] = data
+  .filter((t: any) => {
+    const isCompleted = t.status === 'completed' || t.is_active === false || t.driver_response === 'declined';
+    return !isCompleted && t.start_date && t.one_way_start_time;
+  })
+  .map((t: any) => ({
     tripId: t.id,
-    passengerName: t.passenger_name,
-    pickupLocation: t.pickup_location,
-    startTime: t.start_time!, // ISO string
+    passengerName: t.company_name ? `Company: ${t.company_name}` : 'Passenger',
+    pickupLocation: t.starting_point || 'Unknown Start',
+    startTime: `${t.start_date}T${t.one_way_start_time}.000Z`,
   }));
 
 // Cancel old reminders first (avoid duplicates)

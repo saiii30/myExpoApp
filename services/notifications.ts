@@ -239,6 +239,7 @@ export const cancelTripNotifications = async (tripId: string | number) => {
 
 // Schedule local notifications for multiple trips in Expo Go, or let backend manage it in dev builds
 export const scheduleMultipleTripNotifications = async (trips: TripNotification[]) => {
+  console.log(`[Notification Fallback] Scheduling local reminders for ${trips.length} trips in notifiction.tsx...`);
   if (Platform.OS === 'android' && isRunningInExpoGo()) {
     console.log('[Notification Fallback] Scheduling local reminders for Expo Go on Android...');
     for (const trip of trips) {

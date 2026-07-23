@@ -52,18 +52,21 @@ function RootLayoutContent() {
 
         // Schedule/refresh 15-10-5 min reminders for all trips with a start time
         const notificationTrips: TripNotification[] = trips
-          .filter((t: any) => t.start_time)
+          .filter((t: any) => {
+            const isCompleted = t.status === 'completed' || t.is_active === false || t.driver_response === 'declined';
+            return !isCompleted && t.start_date && t.one_way_start_time;
+          })
           .map((t: any) => ({
             tripId: t.id,
-            passengerName: t.passenger_name || t.company_name,
-            pickupLocation: t.pickup_location || t.starting_point,
-            startTime: t.start_time,
+            passengerName: t.company_name ? `Company: ${t.company_name}` : 'Passenger',
+            pickupLocation: t.starting_point || 'Unknown Start',
+            startTime: `${t.start_date}T${t.one_way_start_time}.000Z`,
           }));
 
         for (const trip of notificationTrips) {
           await cancelTripNotifications(trip.tripId);
         }
-
+        console.log(`[Notification Fallback] Cleared existing notifications for ${notificationTrips.length} trips`);
         await scheduleMultipleTripNotifications(notificationTrips);
       } catch (e) {
         console.log('Trip polling failed', e);
