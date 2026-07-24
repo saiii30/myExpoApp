@@ -48,10 +48,14 @@ Notifications.setNotificationHandler({
 });
 
 export interface TripNotification {
-  tripId: string | number;
+  tripId: string |number;
   passengerName: string;
   pickupLocation: string;
-  startTime: string; // ISO string
+
+  startDate: string;
+  endDate: string;
+  startTime: string; // Example: "10:00:00"
+
   isPending?: boolean;
 }
 
@@ -202,48 +206,73 @@ const scheduleLocalTripReminders = async (trip: TripNotification) => {
   const hasPermission = await requestNotificationPermissions();
   if (!hasPermission) return;
 
-  await cancelTripNotifications(trip.tripId);
+  // await cancelTripNotifications(trip.tripId);
 
-  const startTime = new Date(trip.startTime);
-const now = new Date();
-const timeUntilStart = startTime.getTime() - now.getTime();
 
-console.log('START TIME:', startTime.toString());
-console.log('NOW:', now.toString());
-console.log('MINUTES LEFT:', timeUntilStart / (1000 * 60));
+  const now = new Date();
 
-if (timeUntilStart <= 0) {
-  console.log('Trip already started or is in the past. Not scheduling.');
-  return;
+const startDate = new Date(trip.startDate);
+const endDate = new Date(trip.endDate);
+
+const [hour, minute, second] = trip.startTime
+  .split(":")
+  .map(Number);
+
+const intervals = [15, 10, 5];
+
+for (
+  let current = new Date(startDate);
+  current <= endDate;
+  current.setDate(current.getDate() + 1)
+) {
+  const tripDateTime = new Date(current);
+
+  tripDateTime.setHours(hour);
+  tripDateTime.setMinutes(minute);
+  tripDateTime.setSeconds(second || 0);
+
+  if (tripDateTime <= now) {
+    continue;
+  }
+
+  for (const minutes of intervals) {
+    const reminderTime = new Date(
+      tripDateTime.getTime() - minutes * 60 * 1000
+    );
+
+    if (reminderTime <= now) {
+      continue;
+    }
+
+    await Notifications.scheduleNotificationAsync({
+      identifier: `trip-${trip.tripId}-${current.toISOString().split("T")[0]}-${minutes}`,
+      content: {
+        title: trip.isPending
+          ? `Action Required - Trip in ${minutes}m`
+          : `Trip Reminder - ${minutes} minutes`,
+        body: trip.isPending
+          ? `Please ACCEPT or DECLINE your trip for ${trip.passengerName}.`
+          : `Trip for ${trip.passengerName} starts in ${minutes} minutes.`,
+        data: {
+          tripId: trip.tripId,
+        },
+        categoryIdentifier: trip.isPending
+          ? "pending_trip"
+          : undefined,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: reminderTime,
+      } as any,
+    });
+
+    console.log(
+      `Scheduled ${minutes} min reminder for ${tripDateTime.toDateString()}`
+    );
+  }
 }
 
-  const intervals = [ 15, 10, 5];
-  for (const minutes of intervals) {
-    const reminderTime = new Date(startTime.getTime() - minutes * 60 * 1000);
-    if (reminderTime > now) {
-      const title = trip.isPending 
-        ? `Action Required - Trip in ${minutes}m` 
-        : `Trip Reminder - ${minutes} minutes`;
-      const body = trip.isPending 
-        ? `Please ACCEPT or DECLINE your trip for ${trip.passengerName} starting at ${trip.pickupLocation} in ${minutes} minutes.`
-        : `Trip for ${trip.passengerName} at ${trip.pickupLocation} starts in ${minutes} minutes`;
-
-      await Notifications.scheduleNotificationAsync({
-        identifier: `trip-${trip.tripId}-${minutes}min`,
-        content: {
-          title,
-          body,
-          data: { tripId: trip.tripId.toString(), minutes },
-          categoryIdentifier: trip.isPending ? 'pending_trip' : undefined,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: reminderTime,
-        } as any,
-      });
-      console.log(`[Notification Fallback] Scheduled local ${minutes}m reminder for trip ${trip.tripId} at ${reminderTime.toISOString()}`);
-    }
-  }
+  
 };
 
 // Send an immediate local notification (used for instant alerts in Expo Go)
@@ -265,23 +294,23 @@ export const showLocalNotification = async (title: string, body: string) => {
 };
 
 // Cancel local notifications for a specific trip in Expo Go, or let backend manage it in dev builds
-export const cancelTripNotifications = async (tripId: string | number) => {
-  if (Platform.OS === 'android' && isRunningInExpoGo()) {
-    try {
-      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-      for (const notification of scheduled) {
-        if (notification.identifier.includes(`trip-${tripId}`)) {
-          await Notifications.cancelScheduledNotificationAsync(notification.identifier);
-          console.log(`[Notification Fallback] Cancelled local notification: ${notification.identifier}`);
-        }
-      }
-    } catch (e) {
-      console.error('Error cancelling local notification:', e);
-    }
-  } else {
-    console.log(`[Push Notification Info] Backend handles scheduling/cancellation for trip: ${tripId}`);
-  }
-};
+// export const cancelTripNotifications = async (tripId: string | number) => {
+//   if (Platform.OS === 'android' && isRunningInExpoGo()) {
+//     try {
+//       const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+//       for (const notification of scheduled) {
+//         if (notification.identifier.includes(`trip-${tripId}`)) {
+//           await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+//           console.log(`[Notification Fallback] Cancelled local notification: ${notification.identifier}`);
+//         }
+//       }
+//     } catch (e) {
+//       console.error('Error cancelling local notification:', e);
+//     }
+//   } else {
+//     console.log(`[Push Notification Info] Backend handles scheduling/cancellation for trip: ${tripId}`);
+//   }
+// };
 
 // Schedule local notifications for multiple trips in Expo Go, or let backend manage it in dev builds
 export const scheduleMultipleTripNotifications = async (trips: TripNotification[]) => {
