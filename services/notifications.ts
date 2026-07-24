@@ -206,13 +206,12 @@ const scheduleLocalTripReminders = async (trip: TripNotification) => {
   const hasPermission = await requestNotificationPermissions();
   if (!hasPermission) return;
 
-  // await cancelTripNotifications(trip.tripId);
-
+  await cancelTripNotifications(trip.tripId);
 
   const now = new Date();
 
-const startDate = new Date(trip.startDate);
-const endDate = new Date(trip.endDate);
+  const startDate = new Date(trip.startDate);
+  const endDate = trip.endDate ? new Date(trip.endDate) : new Date(trip.startDate);
 
 const [hour, minute, second] = trip.startTime
   .split(":")
@@ -259,6 +258,10 @@ for (
         categoryIdentifier: trip.isPending
           ? "pending_trip"
           : undefined,
+        sound: true,
+        vibrate: trip.isPending && minutes <= 5 
+          ? [0, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000] 
+          : undefined,
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -294,23 +297,23 @@ export const showLocalNotification = async (title: string, body: string) => {
 };
 
 // Cancel local notifications for a specific trip in Expo Go, or let backend manage it in dev builds
-// export const cancelTripNotifications = async (tripId: string | number) => {
-//   if (Platform.OS === 'android' && isRunningInExpoGo()) {
-//     try {
-//       const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-//       for (const notification of scheduled) {
-//         if (notification.identifier.includes(`trip-${tripId}`)) {
-//           await Notifications.cancelScheduledNotificationAsync(notification.identifier);
-//           console.log(`[Notification Fallback] Cancelled local notification: ${notification.identifier}`);
-//         }
-//       }
-//     } catch (e) {
-//       console.error('Error cancelling local notification:', e);
-//     }
-//   } else {
-//     console.log(`[Push Notification Info] Backend handles scheduling/cancellation for trip: ${tripId}`);
-//   }
-// };
+export const cancelTripNotifications = async (tripId: string | number) => {
+  if (Platform.OS === 'android' && isRunningInExpoGo()) {
+    try {
+      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      for (const notification of scheduled) {
+        if (notification.identifier.includes(`trip-${tripId}`)) {
+          await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+          console.log(`[Notification Fallback] Cancelled local notification: ${notification.identifier}`);
+        }
+      }
+    } catch (e) {
+      console.error('Error cancelling local notification:', e);
+    }
+  } else {
+    console.log(`[Push Notification Info] Backend handles scheduling/cancellation for trip: ${tripId}`);
+  }
+};
 
 // Schedule local notifications for multiple trips in Expo Go, or let backend manage it in dev builds
 export const scheduleMultipleTripNotifications = async (trips: TripNotification[]) => {

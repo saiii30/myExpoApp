@@ -1,11 +1,11 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loadSession, session, tripsAPI } from '@/services/api';
-import {  scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
+import { cancelTripNotifications, scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { isRunningInExpoGo } from 'expo';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View, Modal, TextInput } from 'react-native';
+import { Alert, FlatList, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 
 
@@ -29,12 +29,13 @@ interface Trip {
   trip_type?: string;
   way?: string;
   start_date?: string;
+  end_date?: string;
 }
 
 export default function TripsScreen() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectTripId, setRejectTripId] = useState<string | number | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -58,7 +59,7 @@ export default function TripsScreen() {
   const driverId = session.user?.id || 'cf6912d9-6617-482b-aacf-dd034c780185';
   const agencyId = session.user?.agency_id || '6e7cdb44-603c-46c4-a4ca-198334c34314';
 
-  
+
 
   useEffect(() => {
     const init = async () => {
@@ -73,81 +74,81 @@ export default function TripsScreen() {
       setLoading(true);
       const data = await tripsAPI.getTrips(undefined, driverId, agencyId);
 
-      
+
 
       // STEP 1: Get all active trips
-const activeTrips = data.filter((t: any) => {
-  return (
-    t.status !== 'completed' &&
-    t.is_active !== false &&
-    t.driver_response !== 'declined'
-  );
-});
+      const activeTrips = data.filter((t: any) => {
+        return (
+          t.status !== 'completed' &&
+          t.is_active !== false &&
+          t.driver_response !== 'declined'
+        );
+      });
 
-// STEP 2: Sort by start time (earliest first)
-activeTrips.sort((a: any, b: any) => {
-  const timeA =
-    a.start_date && a.one_way_start_time
-      ? new Date(`${a.start_date}T${a.one_way_start_time}`).getTime()
-      : 0;
+      // STEP 2: Sort by start time (earliest first)
+      activeTrips.sort((a: any, b: any) => {
+        const timeA =
+          a.start_date && a.one_way_start_time
+            ? new Date(`${a.start_date}T${a.one_way_start_time}`).getTime()
+            : 0;
 
-  const timeB =
-    b.start_date && b.one_way_start_time
-      ? new Date(`${b.start_date}T${b.one_way_start_time}`).getTime()
-      : 0;
+        const timeB =
+          b.start_date && b.one_way_start_time
+            ? new Date(`${b.start_date}T${b.one_way_start_time}`).getTime()
+            : 0;
 
-  return timeA - timeB;
-});
+        return timeA - timeB;
+      });
 
-// STEP 3: Decide which trip should be Current
-let currentTripId: string | null = null;
+      // STEP 3: Decide which trip should be Current
+      let currentTripId: string | null = null;
 
-if (activeTrips.length > 0) {
-  const earliestTrip = activeTrips[0];
+      if (activeTrips.length > 0) {
+        const earliestTrip = activeTrips[0];
 
-  if (earliestTrip.start_date && earliestTrip.one_way_start_time) {
-    const startTime = new Date(
-      `${earliestTrip.start_date}T${earliestTrip.one_way_start_time}`
-    ).getTime();
+        if (earliestTrip.start_date && earliestTrip.one_way_start_time) {
+          const startTime = new Date(
+            `${earliestTrip.start_date}T${earliestTrip.one_way_start_time}`
+          ).getTime();
 
-    const now = new Date().getTime();
-    const diffMinutes = (startTime - now) / (1000 * 60);
+          const now = new Date().getTime();
+          const diffMinutes = (startTime - now) / (1000 * 60);
 
-    // Trip becomes Current when 20 mins away or already started
-    if (diffMinutes <= 20) {
-      currentTripId = String(earliestTrip.id);
-    }
-  } else {
-    // If no time available, make earliest trip current
-    currentTripId = String(earliestTrip.id);
-  }
-}
+          // Trip becomes Current when 20 mins away or already started
+          if (diffMinutes <= 20) {
+            currentTripId = String(earliestTrip.id);
+          }
+        } else {
+          // If no time available, make earliest trip current
+          currentTripId = String(earliestTrip.id);
+        }
+      }
 
-// STEP 4: Filter trips for tabs
-const filteredDbTrips = data.filter((t: any) => {
-  const isCompleted =
-    t.status === 'completed' ||
-    t.is_active === false ||
-    t.driver_response === 'declined';
+      // STEP 4: Filter trips for tabs
+      const filteredDbTrips = data.filter((t: any) => {
+        const isCompleted =
+          t.status === 'completed' ||
+          t.is_active === false ||
+          t.driver_response === 'declined';
 
-  if (activeTab === 'completed') {
-    return isCompleted;
-  }
+        if (activeTab === 'completed') {
+          return isCompleted;
+        }
 
-  if (isCompleted) return false;
+        if (isCompleted) return false;
 
-  if (activeTab === 'current') {
-  return currentTripId !== null && String(t.id) === currentTripId;
-}
+        if (activeTab === 'current') {
+          return currentTripId !== null && String(t.id) === currentTripId;
+        }
 
-if (activeTab === 'upcoming') {
-  return currentTripId === null
-    ? true
-    : String(t.id) !== currentTripId;
-}
+        if (activeTab === 'upcoming') {
+          return currentTripId === null
+            ? true
+            : String(t.id) !== currentTripId;
+        }
 
-  return false;
-});
+        return false;
+      });
 
 
       // Format database trip objects
@@ -191,56 +192,58 @@ if (activeTab === 'upcoming') {
             }
             return undefined;
           })(),
-          source: 'postgres'
+          source: 'postgres',
+          start_date: ts.start_date,
+          end_date: ts.end_date,
         };
       });
 
-     
-    
+
+
 
 
 
       const newTrips = [...formattedDbTrips];
       console.log(newTrips)
-setTrips(newTrips);
+      setTrips(newTrips);
 
-// --------------------
-// NEW TRIP NOTIFICATION
-// --------------------
+      // --------------------
+      // NEW TRIP NOTIFICATION
+      // --------------------
 
 
-// --------------------
-// SCHEDULE 15/10/5 MIN REMINDERS
-// --------------------
-const notificationTrips: TripNotification[] = data
-  .filter(
-    (t: any) =>
-      currentTripId !== null &&
-      String(t.id) === currentTripId
-  )
-  .map((t: any) => ({
-    tripId: t.id,
-    passengerName: t.company_name
-      ? `Company: ${t.company_name}`
-      : "Passenger",
+      // --------------------
+      // SCHEDULE 15/10/5 MIN REMINDERS
+      // --------------------
+      const notificationTrips: TripNotification[] = data
+        .filter(
+          (t: any) =>
+            currentTripId !== null &&
+            String(t.id) === currentTripId
+        )
+        .map((t: any) => ({
+          tripId: t.id,
+          passengerName: t.company_name
+            ? `Company: ${t.company_name}`
+            : "Passenger",
 
-    pickupLocation: t.starting_point,
+          pickupLocation: t.starting_point,
 
-    startDate: t.start_date,
-    endDate: t.end_date,
+          startDate: t.start_date,
+          endDate: t.end_date,
 
-    startTime: t.one_way_start_time,
+          startTime: t.one_way_start_time,
 
-    isPending: t.driver_response !== "accepted",
-  }));
+          isPending: t.driver_response !== "accepted",
+        }));
 
-// // Cancel old reminders first (avoid duplicates)
-// for (const trip of notificationTrips) {
-//   await cancelTripNotifications(trip.tripId);
-// }
+      // Cancel old reminders first (avoid duplicates)
+      for (const trip of notificationTrips) {
+        await cancelTripNotifications(trip.tripId);
+      }
 
-// Schedule new reminders
-await scheduleMultipleTripNotifications(notificationTrips);
+      // Schedule new reminders
+      await scheduleMultipleTripNotifications(notificationTrips);
     } catch (error: any) {
       if (error.response?.status === 401) {
         Alert.alert('Session Expired', 'Please log in again');
@@ -262,13 +265,13 @@ await scheduleMultipleTripNotifications(notificationTrips);
       }
       await tripsAPI.acceptTrip(tripId, driverId);
       Alert.alert('Success', 'Trip accepted successfully');
-      
+
       if (Platform.OS === 'android' && isRunningInExpoGo()) {
         const trip = trips.find(t => t.id === tripId);
         const name = trip ? trip.passenger_name : 'Passenger';
         showLocalNotification('Trip Accepted', `You have accepted the trip for ${name}.`);
       }
-      
+
       loadTrips();
     } catch (error) {
       Alert.alert('Error', 'Failed to accept trip');
@@ -287,9 +290,9 @@ await scheduleMultipleTripNotifications(notificationTrips);
       Alert.alert('Required', 'Please enter a reason for rejecting the trip.');
       return;
     }
-    
+
     setRejectModalVisible(false);
-    
+
     try {
       if (String(rejectTripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip rejected locally');
@@ -298,13 +301,13 @@ await scheduleMultipleTripNotifications(notificationTrips);
       }
       await tripsAPI.rejectTrip(rejectTripId, driverId, rejectReason);
       Alert.alert('Success', 'Trip rejected');
-      
+
       if (Platform.OS === 'android' && isRunningInExpoGo()) {
         const trip = trips.find(t => t.id === rejectTripId);
         const name = trip ? trip.passenger_name : 'Passenger';
         showLocalNotification('Trip Rejected', `You have rejected the trip for ${name}.`);
       }
-      
+
       loadTrips();
     } catch (error) {
       Alert.alert('Error', 'Failed to reject trip');
@@ -320,13 +323,13 @@ await scheduleMultipleTripNotifications(notificationTrips);
       }
       await tripsAPI.completeTrip(tripId);
       Alert.alert('Success', 'Trip completed successfully');
-      
+
       if (Platform.OS === 'android' && isRunningInExpoGo()) {
         const trip = trips.find(t => t.id === tripId);
         const name = trip ? trip.passenger_name : 'Passenger';
         showLocalNotification('Trip Completed', `You have completed the trip for ${name}.`);
       }
-      
+
       loadTrips();
     } catch (error) {
       Alert.alert('Error', 'Failed to complete trip');
@@ -363,6 +366,16 @@ await scheduleMultipleTripNotifications(notificationTrips);
       </View>
 
       <View style={[styles.detailsRow, { borderTopColor: colors.border }]}>
+        {item.start_date && (
+          <View style={styles.detailItem}>
+            <View style={styles.detailIconContainer}>
+              <FontAwesome5 name="calendar-alt" size={12} color="#38bdf8" />
+            </View>
+            <Text style={[styles.detailText, { color: colors.textSecondary }]}>
+              {item.start_date}{item.end_date && item.end_date !== item.start_date ? ` - ${item.end_date}` : ''}
+            </Text>
+          </View>
+        )}
         {item.start_time && (
           <View style={styles.detailItem}>
             <View style={styles.detailIconContainer}>
@@ -492,7 +505,7 @@ await scheduleMultipleTripNotifications(notificationTrips);
           <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
             <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Reject Trip</Text>
             <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>Please provide a reason for rejecting this trip.</Text>
-            
+
             <TextInput
               style={[styles.modalInput, { color: colors.textPrimary, borderColor: colors.border }]}
               placeholder="e.g., Too far, Vehicle issue..."
@@ -502,7 +515,7 @@ await scheduleMultipleTripNotifications(notificationTrips);
               multiline
               numberOfLines={3}
             />
-            
+
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalCancelButton, { borderColor: colors.border }]}
@@ -510,7 +523,7 @@ await scheduleMultipleTripNotifications(notificationTrips);
               >
                 <Text style={[styles.modalCancelText, { color: colors.textPrimary }]}>Cancel</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalSubmitButton]}
                 onPress={submitReject}
@@ -667,7 +680,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   detailsRow: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     marginTop: 8,
     marginBottom: 16,
     paddingTop: 12,
