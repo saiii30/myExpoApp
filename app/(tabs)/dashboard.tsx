@@ -65,9 +65,25 @@ export default function Dashboard() {
           if (!isPending || t.status === 'completed' || t.is_active === false) return false;
           if (!t.start_date || !t.one_way_start_time) return false;
           
-          const startTime = new Date(`${t.start_date}T${t.one_way_start_time}`);
-          const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
-          return diffMinutes >= 0 && diffMinutes <= 5;
+          const startDate = new Date(t.start_date);
+          const endDate = t.end_date ? new Date(t.end_date) : new Date(t.start_date);
+          
+          const today = new Date(now);
+          today.setHours(0, 0, 0, 0);
+          const tripStartDay = new Date(startDate);
+          tripStartDay.setHours(0, 0, 0, 0);
+          const tripEndDay = new Date(endDate);
+          tripEndDay.setHours(0, 0, 0, 0);
+
+          if (today >= tripStartDay && today <= tripEndDay) {
+            const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
+            const tripTodayTime = new Date(now);
+            tripTodayTime.setHours(hour, minute, second || 0, 0);
+            
+            const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
+            return diffMinutes >= 0 && diffMinutes <= 5;
+          }
+          return false;
         });
         setUrgentTrip(urgent);
       } catch (error) {

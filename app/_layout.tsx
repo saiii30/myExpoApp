@@ -7,7 +7,7 @@ import { ThemeProvider as AppThemeProvider, useAppTheme } from '@/hooks/ThemeCon
 
 import { session, tripsAPI } from '@/services/api';
 import { scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export const unstable_settings = {
   initialRouteName: 'index',
@@ -16,11 +16,13 @@ export const unstable_settings = {
 function RootLayoutContent() {
   const { theme } = useAppTheme();
 
+
   const knownTripIds = useRef<Set<string>>(new Set());
-  const isInitialized = useRef(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
     const checkNewTrips = async () => {
+      if (!session.user) return; // Don't poll if not logged in
       try {
         const trips = await tripsAPI.getTrips(
           undefined,
@@ -32,9 +34,9 @@ function RootLayoutContent() {
           trips.map((t: any) => String(t.id))
         );
 
-        if (!isInitialized.current) {
+        if (!isInitialized) {
           knownTripIds.current = currentIds;
-          isInitialized.current = true;
+          setIsInitialized(true);
           return;
         }
 
@@ -94,12 +96,13 @@ function RootLayoutContent() {
             tripId: t.id,
             passengerName: t.company_name ? `Company: ${t.company_name}` : 'Passenger',
             pickupLocation: t.starting_point || 'Unknown Start',
-            startTime: `${t.start_date}T${t.one_way_start_time }`, // Construct local time
+            startDate: t.start_date,
+            endDate: t.end_date,
+            startTime: t.one_way_start_time,
             isPending: t.driver_response !== 'accepted',
           }));
 
-        // Schedule reminders only (do not cancel every 10 seconds)
-await scheduleMultipleTripNotifications(notificationTrips);
+        await scheduleMultipleTripNotifications(notificationTrips);
       } catch (e) {
         console.log('Trip polling failed', e);
       }
@@ -107,7 +110,7 @@ await scheduleMultipleTripNotifications(notificationTrips);
 
     checkNewTrips();
     const interval = setInterval(checkNewTrips, 60000);
-    return () => clearInterval(interval);
+    return () => clearInterval(interval); // Cleanup on unmount
   }, []);
 
   return (
@@ -115,6 +118,7 @@ await scheduleMultipleTripNotifications(notificationTrips);
       <Stack initialRouteName="index">
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="screens/in-app-notifications" options={{ headerShown: false }} />
         <Stack.Screen name="screens/trip-details" options={{ headerShown: false }} />
         <Stack.Screen name="screens/trips" options={{ headerShown: false }} />
         <Stack.Screen name="screens/map" options={{ headerShown: false }} />
@@ -130,7 +134,9 @@ await scheduleMultipleTripNotifications(notificationTrips);
 export default function RootLayout() {
   return (
     <AppThemeProvider>
+
       <RootLayoutContent />
+
     </AppThemeProvider>
   );
 }
