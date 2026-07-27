@@ -3,12 +3,14 @@ import { session, tripsAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, Vibration, Alert, Modal, TextInput } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from 'react-native';
 
 export default function Dashboard() {
   const [availableCount, setAvailableCount] = useState<number | string>('-');
   const [myTripsCount, setMyTripsCount] = useState<number | string>('-');
+  const [completedCount, setCompletedCount] = useState<number | string>('-');
   const [urgentTrip, setUrgentTrip] = useState<any>(null);
+  const [elevenAMTrip, setElevenAMTrip] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
@@ -56,8 +58,15 @@ export default function Dashboard() {
           t.is_active === true
         ).length;
 
+        const completed = trips.filter((t: any) =>
+          t.status === 'completed' ||
+          t.is_active === false ||
+          t.driver_response === 'declined'
+        ).length;
+
         setAvailableCount(available);
         setMyTripsCount(myTrips);
+        setCompletedCount(completed);
 
         const now = new Date();
         const urgent = trips.find((t: any) => {
@@ -86,6 +95,30 @@ export default function Dashboard() {
           return false;
         });
         setUrgentTrip(urgent);
+
+        // Check for 11:00 AM trip
+        const elevenAM = trips.find((t: any) => {
+          const isPending = !t.driver_response || t.driver_response === 'pending';
+          if (!isPending || t.status === 'completed' || t.is_active === false) return false;
+          if (!t.start_date || !t.one_way_start_time) return false;
+          
+          const startDate = new Date(t.start_date);
+          const endDate = t.end_date ? new Date(t.end_date) : new Date(t.start_date);
+          
+          const today = new Date(now);
+          today.setHours(0, 0, 0, 0);
+          const tripStartDay = new Date(startDate);
+          tripStartDay.setHours(0, 0, 0, 0);
+          const tripEndDay = new Date(endDate);
+          tripEndDay.setHours(0, 0, 0, 0);
+
+          if (today >= tripStartDay && today <= tripEndDay) {
+            const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
+            return hour === 11 && minute === 0;
+          }
+          return false;
+        });
+        setElevenAMTrip(elevenAM);
       } catch (error) {
         console.error('Failed to fetch dashboard counts:', error);
         setAvailableCount(0);
@@ -150,6 +183,16 @@ export default function Dashboard() {
     }
   };
 
+  const handleStartTrip = async (tripId: string | number) => {
+    try {
+      await tripsAPI.acceptTrip(tripId, driverId);
+      Alert.alert('Success', 'Trip Started!');
+      setElevenAMTrip(null);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to start trip.');
+    }
+  };
+
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Profile Header */}
@@ -181,6 +224,18 @@ export default function Dashboard() {
               <Text style={styles.urgentBtnText}>DECLINE</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      )}
+
+      {elevenAMTrip && (
+        <View style={[styles.elevenAMCard, { backgroundColor: 'rgba(99, 102, 241, 0.1)', borderColor: colors.accent }]}>
+          <Text style={[styles.elevenAMTitle, { color: colors.accent }]}>11:00 AM TRIP</Text>
+          <Text style={[styles.elevenAMText, { color: colors.textPrimary }]}>
+            Trip for {elevenAMTrip.passenger_name || elevenAMTrip.company_name} at {elevenAMTrip.starting_point} starts at 11:00 AM.
+          </Text>
+          <TouchableOpacity style={[styles.startTripButton, { backgroundColor: colors.accent }]} onPress={() => handleStartTrip(elevenAMTrip.id)}>
+            <Text style={styles.startTripButtonText}>START TRIP</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -283,6 +338,23 @@ export default function Dashboard() {
             </View>
             <View style={[styles.countBadge, { backgroundColor: 'rgba(56, 189, 248, 0.18)' }]}>
               <Text style={[styles.countText, { color: '#38bdf8' }]}>{myTripsCount}</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Completed Trips Row */}
+          <TouchableOpacity
+            style={[styles.metricRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => router.push('/screens/trips' as any)}
+          >
+            <View style={[styles.metricIconBox, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
+              <FontAwesome5 name="check-circle" size={18} color="#6366f1" />
+            </View>
+            <View style={styles.metricTextContent}>
+              <Text style={[styles.metricName, { color: colors.textPrimary }]}>Completed Trips</Text>
+              <Text style={[styles.metricDesc, { color: colors.textSecondary }]}>Total trips you have completed.</Text>
+            </View>
+            <View style={[styles.countBadge, { backgroundColor: 'rgba(99, 102, 241, 0.18)' }]}>
+              <Text style={[styles.countText, { color: '#6366f1' }]}>{completedCount}</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -681,5 +753,30 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  elevenAMCard: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+  },
+  elevenAMTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  elevenAMText: {
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  startTripButton: {
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  startTripButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });

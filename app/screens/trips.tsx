@@ -3,8 +3,9 @@ import { loadSession, session, tripsAPI } from '@/services/api';
 // import { cancelTripNotifications, scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, FlatList, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Calendar, DateData } from 'react-native-calendars';
 
 
 
@@ -39,6 +40,8 @@ export default function TripsScreen() {
   const [rejectTripId, setRejectTripId] = useState<string | number | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [activeTab, setActiveTab] = useState<'current' | 'upcoming' | 'completed'>('current');
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date(Date.now() + 24 * 60 * 60 * 1000)); // Default to tomorrow
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const theme = useColorScheme();
   const isDark = theme === 'dark';
@@ -52,6 +55,7 @@ export default function TripsScreen() {
     accent: '#6366f1',
     activeTabBg: '#6366f1',
     inactiveTabBg: isDark ? '#1e293b' : '#ffffff',
+    accentLight: 'rgba(99, 102, 241, 0.12)',
   };
 
   // Use active session credentials or fallback to active dev driver UUID
@@ -66,7 +70,7 @@ export default function TripsScreen() {
       loadTrips();
     };
     init();
-  }, [activeTab]);
+  }, [activeTab, selectedDate]);
 
   const loadTrips = async () => {
     try {
@@ -99,29 +103,9 @@ export default function TripsScreen() {
         return timeA - timeB;
       });
 
-      // STEP 3: Decide which trip should be Current
-      let currentTripId: string | null = null;
-
-      if (activeTrips.length > 0) {
-        const earliestTrip = activeTrips[0];
-
-        if (earliestTrip.start_date && earliestTrip.one_way_start_time) {
-          const startTime = new Date(
-            `${earliestTrip.start_date}T${earliestTrip.one_way_start_time}`
-          ).getTime();
-
-          const now = new Date().getTime();
-          const diffMinutes = (startTime - now) / (1000 * 60);
-
-          // Trip becomes Current when 20 mins away or already started
-          if (diffMinutes <= 20) {
-            currentTripId = String(earliestTrip.id);
-          }
-        } else {
-          // If no time available, make earliest trip current
-          currentTripId = String(earliestTrip.id);
-        }
-      }
+      // STEP 3: Get today's date for filtering
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
       // STEP 4: Filter trips for tabs
       const filteredDbTrips = data.filter((t: any) => {
@@ -137,13 +121,51 @@ export default function TripsScreen() {
         if (isCompleted) return false;
 
         if (activeTab === 'current') {
-          return currentTripId !== null && String(t.id) === currentTripId;
+          // Show trips where today is within the date range (start_date to end_date)
+          if (t.start_date) {
+            // Parse start_date manually to avoid timezone issues
+            const [startYear, startMonth, startDay] = t.start_date.split('-').map(Number);
+            const startDate = new Date(startYear, startMonth - 1, startDay);
+            startDate.setHours(0, 0, 0, 0);
+
+            // Parse end_date if available, otherwise use start_date
+            let endDate = startDate;
+            if (t.end_date) {
+              const [endYear, endMonth, endDay] = t.end_date.split('-').map(Number);
+              endDate = new Date(endYear, endMonth - 1, endDay);
+              endDate.setHours(0, 0, 0, 0);
+            }
+
+            // Check if today is within the range [startDate, endDate]
+            return today.getTime() >= startDate.getTime() && today.getTime() <= endDate.getTime();
+          }
+          return false;
         }
 
         if (activeTab === 'upcoming') {
-          return currentTripId === null
-            ? true
-            : String(t.id) !== currentTripId;
+          // Show trips for selected date
+          if (t.start_date) {
+            // Parse start_date manually to avoid timezone issues
+            const [startYear, startMonth, startDay] = t.start_date.split('-').map(Number);
+            const startDate = new Date(startYear, startMonth - 1, startDay);
+            startDate.setHours(0, 0, 0, 0);
+
+            // Parse end_date if available, otherwise use start_date
+            let endDate = startDate;
+            if (t.end_date) {
+              const [endYear, endMonth, endDay] = t.end_date.split('-').map(Number);
+              endDate = new Date(endYear, endMonth - 1, endDay);
+              endDate.setHours(0, 0, 0, 0);
+            }
+
+            // Parse selected date
+            const selected = new Date(selectedDate);
+            selected.setHours(0, 0, 0, 0);
+
+            // Check if selected date is within the trip's date range
+            return selected.getTime() >= startDate.getTime() && selected.getTime() <= endDate.getTime();
+          }
+          return false;
         }
 
         return false;
@@ -401,22 +423,6 @@ export default function TripsScreen() {
         </View>
       </View>
 
-      {item.status === 'pending' && (
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.rejectButton]}
-            onPress={() => promptReject(item.id)}
-          >
-            <Text style={styles.actionButtonText}>Reject</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.acceptButton]}
-            onPress={() => handleAccept(item.id)}
-          >
-            <Text style={styles.actionButtonText}>Accept</Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       {item.status === 'accepted' && (
         <TouchableOpacity
@@ -479,6 +485,19 @@ export default function TripsScreen() {
         </TouchableOpacity>
       </View>
 
+      {activeTab === 'upcoming' && (
+        <TouchableOpacity
+          style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => setShowDatePicker(true)}
+        >
+          <FontAwesome5 name="calendar-alt" size={16} color={colors.accent} />
+          <Text style={[styles.datePickerText, { color: colors.textPrimary }]}>
+            {selectedDate.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+          </Text>
+          <FontAwesome5 name="chevron-down" size={12} color={colors.textSecondary} />
+        </TouchableOpacity>
+      )}
+
       {loading ? (
         <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading trips...</Text>
       ) : (
@@ -530,6 +549,58 @@ export default function TripsScreen() {
                 <Text style={styles.modalSubmitText}>Submit Reject</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Calendar Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showDatePicker}
+        onRequestClose={() => setShowDatePicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.calendarContent, { backgroundColor: colors.card }]}>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Select Date</Text>
+            <Calendar
+              onDayPress={(day: DateData) => {
+                setSelectedDate(new Date(day.dateString));
+                setShowDatePicker(false);
+              }}
+              markedDates={{
+                [selectedDate.toISOString().split('T')[0]]: {
+                  selected: true,
+                  selectedColor: colors.accent,
+                  selectedTextColor: '#ffffff',
+                },
+              }}
+              theme={{
+                backgroundColor: colors.card,
+                calendarBackground: colors.card,
+                textSectionTitleColor: colors.textSecondary,
+                selectedDayBackgroundColor: colors.accent,
+                selectedDayTextColor: '#ffffff',
+                todayTextColor: colors.accent,
+                dayTextColor: colors.textPrimary,
+                textDisabledColor: colors.textSecondary,
+                arrowColor: colors.accent,
+                monthTextColor: colors.textPrimary,
+                textDayFontWeight: '500',
+                textMonthFontWeight: 'bold',
+                textDayHeaderFontWeight: '500',
+                textDayFontSize: 16,
+                textMonthFontSize: 18,
+                textDayHeaderFontSize: 14,
+              }}
+              enableSwipeMonths={true}
+            />
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalCancelButton, { borderColor: colors.border }]}
+              onPress={() => setShowDatePicker(false)}
+            >
+              <Text style={[styles.modalCancelText, { color: colors.textPrimary }]}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -820,5 +891,56 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  datePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  datePickerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginHorizontal: 8,
+  },
+  datePickerContent: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  dateOptionsContainer: {
+    flexDirection: 'column',
+    gap: 12,
+    marginBottom: 24,
+  },
+  dateOptionButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  dateOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  calendarContent: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
   },
 });
