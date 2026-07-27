@@ -6,9 +6,11 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from 'react-native';
 
 export default function Dashboard() {
-  const [availableCount, setAvailableCount] = useState<number | string>('-');
-  const [myTripsCount, setMyTripsCount] = useState<number | string>('-');
-  const [completedCount, setCompletedCount] = useState<number | string>('-');
+  const [availableCount, setAvailableCount] = useState<number | string >('-');
+  const [acceptedCount, setAcceptedCount] = useState<number | string >('-');
+  const [rejectedCount, setRejectedCount] = useState<number | string >('-');
+  const [completedCount, setCompletedCount] = useState<number | string >('-');
+  const [currentTrip, setCurrentTrip] = useState<any>(null);
   const [urgentTrip, setUrgentTrip] = useState<any>(null);
   const [elevenAMTrip, setElevenAMTrip] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -52,23 +54,55 @@ export default function Dashboard() {
           t.is_active === true
         ).length;
 
-        const myTrips = trips.filter((t: any) =>
+        const accepted = trips.filter((t: any) =>
           t.driver_response === 'accepted' &&
           t.status !== 'completed' &&
           t.is_active === true
         ).length;
 
-        const completed = trips.filter((t: any) =>
-          t.status === 'completed' ||
-          t.is_active === false ||
-          t.driver_response === 'declined'
+        const rejected = trips.filter((t: any) =>
+          t.driver_response === 'declined' ||
+          t.driver_response_two_way === 'declined'
         ).length;
 
-        setAvailableCount(available);
-        setMyTripsCount(myTrips);
-        setCompletedCount(completed);
+        const completed = trips.filter((t: any) =>
+          t.status === 'completed' ||
+          (t.is_active === false && t.driver_response !== 'declined' && t.driver_response_two_way !== 'declined')
+        ).length;
 
+        // Find current/active trip
         const now = new Date();
+        const current = trips.find((t: any) => {
+          if (t.driver_response !== 'accepted' || t.status === 'completed' || !t.is_active) return false;
+          if (!t.start_date || !t.one_way_start_time) return false;
+          
+          const startDate = new Date(t.start_date);
+          const endDate = t.end_date ? new Date(t.end_date) : new Date(t.start_date);
+          
+          const today = new Date(now);
+          today.setHours(0, 0, 0, 0);
+          const tripStartDay = new Date(startDate);
+          tripStartDay.setHours(0, 0, 0, 0);
+          const tripEndDay = new Date(endDate);
+          tripEndDay.setHours(0, 0, 0, 0);
+
+          if (today >= tripStartDay && today <= tripEndDay) {
+            const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
+            const tripTodayTime = new Date(now);
+            tripTodayTime.setHours(hour, minute, second || 0, 0);
+            
+            const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
+            return diffMinutes >= -30 && diffMinutes <= 120; // Within 2 hours window
+          }
+          return false;
+        });
+
+        setAvailableCount(available);
+        setAcceptedCount(accepted);
+        setRejectedCount(rejected);
+        setCompletedCount(completed);
+        setCurrentTrip(current);
+
         const urgent = trips.find((t: any) => {
           const isPending = !t.driver_response || t.driver_response === 'pending';
           if (!isPending || t.status === 'completed' || t.is_active === false) return false;
@@ -122,7 +156,9 @@ export default function Dashboard() {
       } catch (error) {
         console.error('Failed to fetch dashboard counts:', error);
         setAvailableCount(0);
-        setMyTripsCount(0);
+        setAcceptedCount(0);
+        setRejectedCount(0);
+        setCompletedCount(0);
       } finally {
         setLoading(false);
       }
@@ -239,6 +275,7 @@ export default function Dashboard() {
         </View>
       )}
 
+
       {/* Live Telemetry Widget */}
       {/* <View style={[styles.liveCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.liveCardHeader}>
@@ -256,7 +293,7 @@ export default function Dashboard() {
 
         <View style={[styles.liveFooter, { borderTopColor: colors.border }]}>
           <View style={styles.liveStat}>
-            <Text style={[styles.liveStatVal, { color: colors.textPrimary }]}>{myTripsCount}</Text>
+            <Text style={[styles.liveStatVal, { color: colors.textPrimary }]}>{acceptedCount}</Text>
             <Text style={[styles.liveStatLabel, { color: colors.textSecondary }]}>Active Schedules</Text>
           </View>
           <View style={[styles.liveStatDivider, { backgroundColor: colors.border }]} />
@@ -337,7 +374,7 @@ export default function Dashboard() {
               <Text style={[styles.metricDesc, { color: colors.textSecondary }]}>Accepted trips currently on your duty list.</Text>
             </View>
             <View style={[styles.countBadge, { backgroundColor: 'rgba(56, 189, 248, 0.18)' }]}>
-              <Text style={[styles.countText, { color: '#38bdf8' }]}>{myTripsCount}</Text>
+              <Text style={[styles.countText, { color: '#38bdf8' }]}>{acceptedCount}</Text>
             </View>
           </TouchableOpacity>
 
@@ -355,6 +392,23 @@ export default function Dashboard() {
             </View>
             <View style={[styles.countBadge, { backgroundColor: 'rgba(99, 102, 241, 0.18)' }]}>
               <Text style={[styles.countText, { color: '#6366f1' }]}>{completedCount}</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Rejected Trips Row */}
+          <TouchableOpacity
+            style={[styles.metricRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => router.push('/screens/trips' as any)}
+          >
+            <View style={[styles.metricIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
+              <FontAwesome5 name="times-circle" size={18} color="#ef4444" />
+            </View>
+            <View style={styles.metricTextContent}>
+              <Text style={[styles.metricName, { color: colors.textPrimary }]}>Rejected Trips</Text>
+              <Text style={[styles.metricDesc, { color: colors.textSecondary }]}>Trips you have declined.</Text>
+            </View>
+            <View style={[styles.countBadge, { backgroundColor: 'rgba(239, 68, 68, 0.18)' }]}>
+              <Text style={[styles.countText, { color: '#ef4444' }]}>{rejectedCount}</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -775,6 +829,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   startTripButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  currentTripCard: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+  },
+  currentTripHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  currentTripTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginLeft: 8,
+  },
+  currentTripText: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  currentTripLocation: {
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  currentTripTime: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  currentTripTimeText: {
+    fontSize: 13,
+    marginLeft: 6,
+  },
+  currentTripButton: {
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  currentTripButtonText: {
     color: '#fff',
     fontWeight: '700',
     fontSize: 14,

@@ -50,6 +50,8 @@ export default function TripsScreen() {
   const [activeTab, setActiveTab] = useState<'current' | 'upcoming' | 'completed'>('current');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date(Date.now() + 24 * 60 * 60 * 1000)); // Default to tomorrow
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [startTripPopupVisible, setStartTripPopupVisible] = useState(false);
+  const [tripToStart, setTripToStart] = useState<any>(null);
 
   const theme = useColorScheme();
   const isDark = theme === 'dark';
@@ -327,6 +329,23 @@ export default function TripsScreen() {
       console.log(newTrips)
       setTrips(newTrips);
 
+      // Check for trips about to start (within 1 minute)
+      const now = new Date();
+      const upcomingTrip = newTrips.find((t: Trip) => {
+        if (t.status !== 'pending' || !t.start_time) return false;
+        
+        const tripStartTime = new Date(t.start_time);
+        const diffMinutes = (tripStartTime.getTime() - now.getTime()) / (1000 * 60);
+        
+        // Show popup if trip starts in 0-1 minute
+        return diffMinutes >= 0 && diffMinutes <= 1;
+      });
+
+      if (upcomingTrip && !startTripPopupVisible) {
+        setTripToStart(upcomingTrip);
+        setStartTripPopupVisible(true);
+      }
+
       // --------------------
       // NEW TRIP NOTIFICATION
       // --------------------
@@ -380,14 +399,21 @@ export default function TripsScreen() {
     try {
       // Extract original_id if this is a leg trip
       const originalId = String(tripId).includes('-') ? String(tripId).split('-')[0] : tripId;
+      const isReturnLeg = String(tripId).includes('-return');
       
       if (String(tripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip accepted locally');
         setTrips(prev => prev.filter(t => t.id !== tripId));
         return;
       }
-      await tripsAPI.acceptTrip(originalId, driverId);
-      Alert.alert('Success', 'Trip accepted successfully');
+      
+      if (isReturnLeg) {
+        await tripsAPI.acceptReturnTrip(originalId);
+        Alert.alert('Success', 'Return trip accepted successfully');
+      } else {
+        await tripsAPI.acceptTrip(originalId, driverId);
+        Alert.alert('Success', 'Trip accepted successfully');
+      }
 
       // if (Platform.OS === 'android' && isRunningInExpoGo()) {
       //   const trip = trips.find(t => t.id === tripId);
@@ -419,14 +445,21 @@ export default function TripsScreen() {
     try {
       // Extract original_id if this is a leg trip
       const originalId = String(rejectTripId).includes('-') ? String(rejectTripId).split('-')[0] : rejectTripId;
+      const isReturnLeg = String(rejectTripId).includes('-return');
       
       if (String(rejectTripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip rejected locally');
         setTrips(prev => prev.filter(t => t.id !== rejectTripId));
         return;
       }
-      await tripsAPI.rejectTrip(originalId, driverId, rejectReason);
-      Alert.alert('Success', 'Trip rejected');
+      
+      if (isReturnLeg) {
+        await tripsAPI.rejectReturnTrip(originalId, rejectReason);
+        Alert.alert('Success', 'Return trip rejected');
+      } else {
+        await tripsAPI.rejectTrip(originalId, driverId, rejectReason);
+        Alert.alert('Success', 'Trip rejected');
+      }
 
       // if (Platform.OS === 'android' && isRunningInExpoGo()) {
       //   const trip = trips.find(t => t.id === rejectTripId);
@@ -437,6 +470,24 @@ export default function TripsScreen() {
       loadTrips();
     } catch (error) {
       Alert.alert('Error', 'Failed to reject trip');
+    }
+  };
+
+  const handleStartTrip = async () => {
+    if (!tripToStart) return;
+    
+    try {
+      const originalId = String(tripToStart.id).includes('-') ? String(tripToStart.id).split('-')[0] : tripToStart.id;
+      
+      await tripsAPI.acceptTrip(originalId, driverId);
+      Alert.alert('Success', 'Trip Started!');
+      setStartTripPopupVisible(false);
+      setTripToStart(null);
+      
+      // Refresh trips
+      loadTrips();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to start trip.');
     }
   };
 
@@ -668,6 +719,67 @@ export default function TripsScreen() {
                 onPress={submitReject}
               >
                 <Text style={styles.modalSubmitText}>Submit Reject</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Start Trip Popup */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={startTripPopupVisible}
+        onRequestClose={() => setStartTripPopupVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.startTripPopupContent, { backgroundColor: colors.card }]}>
+            <View style={styles.startTripPopupHeader}>
+              <FontAwesome5 name="car-side" size={32} color="#10b981" />
+              <Text style={[styles.startTripPopupTitle, { color: colors.textPrimary }]}>Trip Starting Soon!</Text>
+            </View>
+            
+            <Text style={[styles.startTripPopupText, { color: colors.textSecondary }]}>
+              Your trip is about to start. Are you ready to begin?
+            </Text>
+
+            {tripToStart && (
+              <View style={styles.startTripPopupDetails}>
+                <Text style={[styles.startTripPopupDetailLabel, { color: colors.textSecondary }]}>Passenger:</Text>
+                <Text style={[styles.startTripPopupDetailValue, { color: colors.textPrimary }]}>
+                  {tripToStart.passenger_name || tripToStart.company_name}
+                </Text>
+                
+                <Text style={[styles.startTripPopupDetailLabel, { color: colors.textSecondary }]}>From:</Text>
+                <Text style={[styles.startTripPopupDetailValue, { color: colors.textPrimary }]}>
+                  {tripToStart.pickup_location}
+                </Text>
+                
+                <Text style={[styles.startTripPopupDetailLabel, { color: colors.textSecondary }]}>To:</Text>
+                <Text style={[styles.startTripPopupDetailValue, { color: colors.textPrimary }]}>
+                  {tripToStart.dropoff_location}
+                </Text>
+                
+                <Text style={[styles.startTripPopupDetailLabel, { color: colors.textSecondary }]}>Time:</Text>
+                <Text style={[styles.startTripPopupDetailValue, { color: colors.textPrimary }]}>
+                  {tripToStart.start_time ? new Date(tripToStart.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.startTripPopupButtons}>
+              <TouchableOpacity
+                style={[styles.startTripPopupButton, styles.startTripPopupCancelButton, { borderColor: colors.border }]}
+                onPress={() => setStartTripPopupVisible(false)}
+              >
+                <Text style={[styles.startTripPopupCancelText, { color: colors.textPrimary }]}>Later</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.startTripPopupButton, styles.startTripPopupStartButton]}
+                onPress={() => handleStartTrip()}
+              >
+                <Text style={styles.startTripPopupStartText}>Start Trip</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1073,10 +1185,71 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 16,
     padding: 24,
+  },
+  startTripPopupContent: {
+    width: '90%',
+    borderRadius: 20,
+    padding: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 8,
+  },
+  startTripPopupHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  startTripPopupTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginTop: 12,
+  },
+  startTripPopupText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  startTripPopupDetails: {
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  startTripPopupDetailLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  startTripPopupDetailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  startTripPopupButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  startTripPopupButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  startTripPopupCancelButton: {
+    borderWidth: 1,
+  },
+  startTripPopupCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  startTripPopupStartButton: {
+    backgroundColor: '#10b981',
+  },
+  startTripPopupStartText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
