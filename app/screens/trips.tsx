@@ -1,8 +1,7 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loadSession, session, tripsAPI } from '@/services/api';
-import { cancelTripNotifications, scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
+// import { cancelTripNotifications, scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { isRunningInExpoGo } from 'expo';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, FlatList, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -212,38 +211,38 @@ export default function TripsScreen() {
       // --------------------
 
 
-      // --------------------
-      // SCHEDULE 15/10/5 MIN REMINDERS
-      // --------------------
-      const notificationTrips: TripNotification[] = data
-        .filter(
-          (t: any) =>
-            currentTripId !== null &&
-            String(t.id) === currentTripId
-        )
-        .map((t: any) => ({
-          tripId: t.id,
-          passengerName: t.company_name
-            ? `Company: ${t.company_name}`
-            : "Passenger",
+      // // --------------------
+      // // SCHEDULE 15/10/5 MIN REMINDERS
+      // // --------------------
+      // const notificationTrips: TripNotification[] = data
+      //   .filter(
+      //     (t: any) =>
+      //       currentTripId !== null &&
+      //       String(t.id) === currentTripId
+      //   )
+      //   .map((t: any) => ({
+      //     tripId: t.id,
+      //     passengerName: t.company_name
+      //       ? `Company: ${t.company_name}`
+      //       : "Passenger",
 
-          pickupLocation: t.starting_point,
+      //     pickupLocation: t.starting_point,
 
-          startDate: t.start_date,
-          endDate: t.end_date,
+      //     startDate: t.start_date,
+      //     endDate: t.end_date,
 
-          startTime: t.one_way_start_time,
+      //     startTime: t.one_way_start_time,
 
-          isPending: t.driver_response !== "accepted",
-        }));
+      //     isPending: t.driver_response !== "accepted",
+      //   }));
 
-      // Cancel old reminders first (avoid duplicates)
-      for (const trip of notificationTrips) {
-        await cancelTripNotifications(trip.tripId);
-      }
+      // // Cancel old reminders first (avoid duplicates)
+      // for (const trip of notificationTrips) {
+      //   await cancelTripNotifications(trip.tripId);
+      // }
 
-      // Schedule new reminders
-      await scheduleMultipleTripNotifications(notificationTrips);
+      // // Schedule new reminders
+      // await scheduleMultipleTripNotifications(notificationTrips);
     } catch (error: any) {
       if (error.response?.status === 401) {
         Alert.alert('Session Expired', 'Please log in again');
@@ -266,11 +265,11 @@ export default function TripsScreen() {
       await tripsAPI.acceptTrip(tripId, driverId);
       Alert.alert('Success', 'Trip accepted successfully');
 
-      if (Platform.OS === 'android' && isRunningInExpoGo()) {
-        const trip = trips.find(t => t.id === tripId);
-        const name = trip ? trip.passenger_name : 'Passenger';
-        showLocalNotification('Trip Accepted', `You have accepted the trip for ${name}.`);
-      }
+      // if (Platform.OS === 'android' && isRunningInExpoGo()) {
+      //   const trip = trips.find(t => t.id === tripId);
+      //   const name = trip ? trip.passenger_name : 'Passenger';
+      //   showLocalNotification('Trip Accepted', `You have accepted the trip for ${name}.`);
+      // }
 
       loadTrips();
     } catch (error) {
@@ -302,11 +301,11 @@ export default function TripsScreen() {
       await tripsAPI.rejectTrip(rejectTripId, driverId, rejectReason);
       Alert.alert('Success', 'Trip rejected');
 
-      if (Platform.OS === 'android' && isRunningInExpoGo()) {
-        const trip = trips.find(t => t.id === rejectTripId);
-        const name = trip ? trip.passenger_name : 'Passenger';
-        showLocalNotification('Trip Rejected', `You have rejected the trip for ${name}.`);
-      }
+      // if (Platform.OS === 'android' && isRunningInExpoGo()) {
+      //   const trip = trips.find(t => t.id === rejectTripId);
+      //   const name = trip ? trip.passenger_name : 'Passenger';
+      //   showLocalNotification('Trip Rejected', `You have rejected the trip for ${name}.`);
+      // }
 
       loadTrips();
     } catch (error) {
@@ -324,11 +323,11 @@ export default function TripsScreen() {
       await tripsAPI.completeTrip(tripId);
       Alert.alert('Success', 'Trip completed successfully');
 
-      if (Platform.OS === 'android' && isRunningInExpoGo()) {
-        const trip = trips.find(t => t.id === tripId);
-        const name = trip ? trip.passenger_name : 'Passenger';
-        showLocalNotification('Trip Completed', `You have completed the trip for ${name}.`);
-      }
+      // if (Platform.OS === 'android' && isRunningInExpoGo()) {
+      //   const trip = trips.find(t => t.id === tripId);
+      //   const name = trip ? trip.passenger_name : 'Passenger';
+      //   showLocalNotification('Trip Completed', `You have completed the trip for ${name}.`);
+      // }
 
       loadTrips();
     } catch (error) {

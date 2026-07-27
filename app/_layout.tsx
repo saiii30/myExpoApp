@@ -6,7 +6,7 @@ import 'react-native-reanimated';
 import { ThemeProvider as AppThemeProvider, useAppTheme } from '@/hooks/ThemeContext';
 
 import { session, tripsAPI } from '@/services/api';
-import { scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
+// import { scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
 import { useEffect, useRef, useState } from 'react';
 
 export const unstable_settings = {
@@ -40,15 +40,15 @@ function RootLayoutContent() {
           return;
         }
 
-        trips.forEach((trip: any) => {
-          const id = String(trip.id);
-          if (!knownTripIds.current.has(id)) {
-            showLocalNotification(
-              'New Trip Assigned',
-              `${trip.passenger_name || trip.company_name} • ${trip.pickup_location || trip.starting_point}`
-            );
-          }
-        });
+        // trips.forEach((trip: any) => {
+        //   const id = String(trip.id);
+        //   if (!knownTripIds.current.has(id)) {
+        //     showLocalNotification(
+        //       'New Trip Assigned',
+        //       `${trip.passenger_name || trip.company_name} • ${trip.pickup_location || trip.starting_point}`
+        //     );
+        //   }
+        // });
 
         knownTripIds.current = currentIds;
 
@@ -86,23 +86,23 @@ function RootLayoutContent() {
         // --- End of "current" trip logic ---
 
 
-        // Schedule/refresh reminders for ONLY the current trip
-        const notificationTrips: TripNotification[] = trips
-          .filter((t: any) => {
-            // Only schedule notifications for the trip that is currently considered "current".
-            return currentTripId !== null && String(t.id) === currentTripId;
-          })
-          .map((t: any) => ({
-            tripId: t.id,
-            passengerName: t.company_name ? `Company: ${t.company_name}` : 'Passenger',
-            pickupLocation: t.starting_point || 'Unknown Start',
-            startDate: t.start_date,
-            endDate: t.end_date,
-            startTime: t.one_way_start_time,
-            isPending: t.driver_response !== 'accepted',
-          }));
+        // // Schedule/refresh reminders for ONLY the current trip
+        // const notificationTrips: TripNotification[] = trips
+        //   .filter((t: any) => {
+        //     // Only schedule notifications for the trip that is currently considered "current".
+        //     return currentTripId !== null && String(t.id) === currentTripId;
+        //   })
+        //   .map((t: any) => ({
+        //     tripId: t.id,
+        //     passengerName: t.company_name ? `Company: ${t.company_name}` : 'Passenger',
+        //     pickupLocation: t.starting_point || 'Unknown Start',
+        //     startDate: t.start_date,
+        //     endDate: t.end_date,
+        //     startTime: t.one_way_start_time,
+        //     isPending: t.driver_response !== 'accepted',
+        //   }));
 
-        await scheduleMultipleTripNotifications(notificationTrips);
+        // await scheduleMultipleTripNotifications(notificationTrips);
       } catch (e) {
         console.log('Trip polling failed', e);
       }

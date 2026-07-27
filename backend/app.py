@@ -86,13 +86,13 @@ class User(db.Model):
     is_driver = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-class PushToken(db.Model):
-    __tablename__ = 'push_tokens'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.String(100), unique=True, nullable=False)
-    token = db.Column(db.String(255), nullable=False)
-    platform = db.Column(db.String(20))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+// class PushToken(db.Model):
+//     __tablename__ = 'push_tokens'
+//     id = db.Column(db.Integer, primary_key=True)
+//     user_id = db.Column(db.String(100), unique=True, nullable=False)
+//     token = db.Column(db.String(255), nullable=False)
+//     platform = db.Column(db.String(20))
+//     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Trip(db.Model):
     __tablename__ = 'trips'
