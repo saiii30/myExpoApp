@@ -11,6 +11,7 @@ import { Calendar, DateData } from 'react-native-calendars';
 
 interface Trip {
   id: string | number;
+  original_id?: string | number; // Original trip ID for two-way trips
   passenger_name: string;
   passenger_phone: string;
   pickup_location: string;
@@ -30,6 +31,13 @@ interface Trip {
   way?: string;
   start_date?: string;
   end_date?: string;
+  // Leg identifier for two-way trips
+  leg?: 'outbound' | 'return';
+  // Two-way trip fields
+  two_way_start_time?: string;
+  two_way_isActive?: boolean;
+  one_way_isActive?: boolean;
+  driver_response_two_way?: string;
 }
 
 export default function TripsScreen() {
@@ -90,15 +98,13 @@ export default function TripsScreen() {
 
       // STEP 2: Sort by start time (earliest first)
       activeTrips.sort((a: any, b: any) => {
-        const timeA =
-          a.start_date && a.one_way_start_time
-            ? new Date(`${a.start_date}T${a.one_way_start_time}`).getTime()
-            : 0;
+        const timeA = a.start_date && a.one_way_start_time
+          ? new Date(`${a.start_date}T${a.one_way_start_time}`).getTime()
+          : 0;
 
-        const timeB =
-          b.start_date && b.one_way_start_time
-            ? new Date(`${b.start_date}T${b.one_way_start_time}`).getTime()
-            : 0;
+        const timeB = b.start_date && b.one_way_start_time
+          ? new Date(`${b.start_date}T${b.one_way_start_time}`).getTime()
+          : 0;
 
         return timeA - timeB;
       });
@@ -173,7 +179,21 @@ export default function TripsScreen() {
 
 
       // Format database trip objects
-      const formattedDbTrips = filteredDbTrips.map((ts: any) => {
+      const formattedDbTrips: Trip[] = [];
+      
+      console.log('=== DEBUG: Raw trip data ===');
+      console.log('Total trips:', filteredDbTrips.length);
+      filteredDbTrips.forEach((ts: any, index: number) => {
+        console.log(`Trip ${index}:`, {
+          id: ts.id,
+          two_way_isActive: ts.two_way_isActive,
+          two_way_start_time: ts.two_way_start_time,
+          one_way_isActive: ts.one_way_isActive,
+          one_way_start_time: ts.one_way_start_time,
+        });
+      });
+      
+      filteredDbTrips.forEach((ts: any) => {
         let passengerName = ts.company_name ? `Company: ${ts.company_name}` : 'No passengers';
         let passengerPhone = 'N/A';
         if (ts.route_point) {
@@ -189,8 +209,9 @@ export default function TripsScreen() {
             // ignore parsing failures
           }
         }
-        return {
-          id: ts.id,
+
+        const baseTrip = {
+          original_id: ts.id,
           passenger_name: passengerName,
           passenger_phone: passengerPhone,
           pickup_location: ts.starting_point || 'Unknown Start',
@@ -199,24 +220,96 @@ export default function TripsScreen() {
           dropoff_location: ts.end_point || 'Unknown End',
           dropoff_lat: ts.end_lat,
           dropoff_lng: ts.end_lng,
-          status: ts.driver_response === 'accepted' ? 'accepted' : (ts.driver_response === 'declined' ? 'rejected' : 'pending'),
           fare: ts.distance_km ? Math.round(ts.distance_km * 15) : 100,
           distance: ts.distance_km ? Math.round(ts.distance_km * 10) / 10 : null,
           created_at: ts.created_at || new Date().toISOString(),
-          start_time: (() => {
-            // Combine date and time to create a full ISO string for notifications.
-            // The backend provides date and time separately.
-            const date = ts.start_date; // e.g., "2026-07-04"
-            const time = ts.one_way_start_time; // e.g., "13:30:00"
-            if (date && time) {
-              return `${date}T${time}`; // Construct local time ISO string e.g., "2026-07-04T13:30:00"
-            }
-            return undefined;
-          })(),
           source: 'postgres',
           start_date: ts.start_date,
           end_date: ts.end_date,
         };
+
+        // Check if this is a two-way trip
+        console.log(`Checking trip ${ts.id} for two-way:`, {
+          two_way_isActive: ts.two_way_isActive,
+          two_way_start_time: ts.two_way_start_time,
+          condition: ts.two_way_start_time !== null && ts.two_way_start_time !== undefined
+        });
+        
+        if (ts.two_way_start_time !== null && ts.two_way_start_time !== undefined) {
+          console.log(`Splitting trip ${ts.id} into outbound and return legs`);
+          // Split into two separate trips: outbound and return
+          
+          // Outbound leg
+          const outboundTrip: Trip = {
+            ...baseTrip,
+            id: `${ts.id}-outbound`,
+            status: ts.driver_response === 'accepted' ? 'accepted' : (ts.driver_response === 'declined' ? 'rejected' : 'pending'),
+            start_time: (() => {
+              const date = ts.start_date;
+              const time = ts.one_way_start_time;
+              if (date && time) {
+                return `${date}T${time}`;
+              }
+              return undefined;
+            })(),
+            leg: 'outbound',
+            two_way_start_time: ts.two_way_start_time,
+            two_way_isActive: ts.two_way_isActive,
+            one_way_isActive: ts.one_way_isActive,
+            driver_response_two_way: ts.driver_response_two_way,
+          };
+          formattedDbTrips.push(outboundTrip);
+
+          // Return leg
+          const returnTrip: Trip = {
+            ...baseTrip,
+            id: `${ts.id}-return`,
+            // Reverse pickup and dropoff for return leg
+            pickup_location: ts.end_point || 'Unknown Start',
+            pickup_lat: ts.end_lat,
+            pickup_lng: ts.end_lng,
+            dropoff_location: ts.starting_point || 'Unknown End',
+            dropoff_lat: ts.starting_lat,
+            dropoff_lng: ts.starting_lng,
+            status: ts.driver_response_two_way === 'accepted' ? 'accepted' : (ts.driver_response_two_way === 'declined' ? 'rejected' : 'pending'),
+            start_time: (() => {
+              const date = ts.start_date;
+              const time = ts.two_way_start_time;
+              if (date && time) {
+                return `${date}T${time}`;
+              }
+              return undefined;
+            })(),
+            leg: 'return',
+            two_way_start_time: ts.two_way_start_time,
+            two_way_isActive: ts.two_way_isActive,
+            one_way_isActive: ts.one_way_isActive,
+            driver_response_two_way: ts.driver_response_two_way,
+          };
+          formattedDbTrips.push(returnTrip);
+        } else {
+          console.log(`Trip ${ts.id} is one-way, creating single entry`);
+          // One-way trip - single entry
+          const oneWayTrip: Trip = {
+            ...baseTrip,
+            id: ts.id,
+            status: ts.driver_response === 'accepted' ? 'accepted' : (ts.driver_response === 'declined' ? 'rejected' : 'pending'),
+            start_time: (() => {
+              const date = ts.start_date;
+              const time = ts.one_way_start_time;
+              if (date && time) {
+                return `${date}T${time}`;
+              }
+              return undefined;
+            })(),
+            leg: undefined,
+            two_way_start_time: ts.two_way_start_time,
+            two_way_isActive: ts.two_way_isActive,
+            one_way_isActive: ts.one_way_isActive,
+            driver_response_two_way: ts.driver_response_two_way,
+          };
+          formattedDbTrips.push(oneWayTrip);
+        }
       });
 
 
@@ -225,6 +318,12 @@ export default function TripsScreen() {
 
 
       const newTrips = [...formattedDbTrips];
+      // Sort all trips by start time
+      newTrips.sort((a: any, b: any) => {
+        const timeA = a.start_time ? new Date(a.start_time).getTime() : 0;
+        const timeB = b.start_time ? new Date(b.start_time).getTime() : 0;
+        return timeA - timeB;
+      });
       console.log(newTrips)
       setTrips(newTrips);
 
@@ -279,12 +378,15 @@ export default function TripsScreen() {
 
   const handleAccept = async (tripId: string | number) => {
     try {
+      // Extract original_id if this is a leg trip
+      const originalId = String(tripId).includes('-') ? String(tripId).split('-')[0] : tripId;
+      
       if (String(tripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip accepted locally');
         setTrips(prev => prev.filter(t => t.id !== tripId));
         return;
       }
-      await tripsAPI.acceptTrip(tripId, driverId);
+      await tripsAPI.acceptTrip(originalId, driverId);
       Alert.alert('Success', 'Trip accepted successfully');
 
       // if (Platform.OS === 'android' && isRunningInExpoGo()) {
@@ -315,12 +417,15 @@ export default function TripsScreen() {
     setRejectModalVisible(false);
 
     try {
+      // Extract original_id if this is a leg trip
+      const originalId = String(rejectTripId).includes('-') ? String(rejectTripId).split('-')[0] : rejectTripId;
+      
       if (String(rejectTripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip rejected locally');
         setTrips(prev => prev.filter(t => t.id !== rejectTripId));
         return;
       }
-      await tripsAPI.rejectTrip(rejectTripId, driverId, rejectReason);
+      await tripsAPI.rejectTrip(originalId, driverId, rejectReason);
       Alert.alert('Success', 'Trip rejected');
 
       // if (Platform.OS === 'android' && isRunningInExpoGo()) {
@@ -337,12 +442,15 @@ export default function TripsScreen() {
 
   const handleComplete = async (tripId: string | number) => {
     try {
+      // Extract original_id if this is a leg trip
+      const originalId = String(tripId).includes('-') ? String(tripId).split('-')[0] : tripId;
+      
       if (String(tripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip completed locally');
         setTrips(prev => prev.filter(t => t.id !== tripId));
         return;
       }
-      await tripsAPI.completeTrip(tripId);
+      await tripsAPI.completeTrip(originalId);
       Alert.alert('Success', 'Trip completed successfully');
 
       // if (Platform.OS === 'android' && isRunningInExpoGo()) {
@@ -361,8 +469,15 @@ export default function TripsScreen() {
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.cardHeader}>
         <Text style={[styles.passengerName, { color: colors.textPrimary }]}>{item.passenger_name}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
+        <View style={styles.headerBadges}>
+          {item.leg && (
+            <View style={[styles.legBadge, { backgroundColor: item.leg === 'outbound' ? '#6366f1' : '#f59e0b' }]}>
+              <Text style={styles.legText}>{item.leg === 'outbound' ? 'OUTBOUND' : 'RETURN'}</Text>
+            </View>
+          )}
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+            <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
+          </View>
         </View>
       </View>
 
@@ -435,7 +550,13 @@ export default function TripsScreen() {
 
       <TouchableOpacity
         style={[styles.viewMapButton, { borderColor: colors.accent }]}
-        onPress={() => router.push({ pathname: '/screens/trip-details', params: { tripId: item.id.toString() } })}
+        onPress={() => router.push({ 
+          pathname: '/screens/trip-details', 
+          params: { 
+            tripId: item.original_id ? item.original_id.toString() : item.id.toString(),
+            leg: item.leg || 'outbound'
+          } 
+        })}
       >
         <Text style={[styles.viewMapButtonText, { color: colors.accent }]}>View Details & Map</Text>
       </TouchableOpacity>
@@ -682,12 +803,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
+  headerBadges: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   passengerName: {
     fontSize: 18,
     fontWeight: '800',
     color: '#f8fafc',
     flex: 1,
     marginRight: 10,
+  },
+  legBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  legText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   statusBadge: {
     paddingHorizontal: 12,

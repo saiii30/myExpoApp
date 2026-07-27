@@ -88,4 +88,17 @@ export const tripsAPI = {
     });
     return response.data;
   },
+  acceptReturnTrip: async (tripId: string | number) => {
+    const response = await api.put(`/trips/${tripId}/driver-response-return`, {
+      driver_response_two_way: 'accepted'
+    });
+    return response.data;
+  },
+  rejectReturnTrip: async (tripId: string | number, reason?: string) => {
+    const response = await api.put(`/trips/${tripId}/driver-response-return`, {
+      driver_response_two_way: 'declined',
+      driver_reason_two_way: reason || 'Rejected by driver'
+    });
+    return response.data;
+  },
 };

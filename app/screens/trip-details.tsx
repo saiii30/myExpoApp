@@ -1,12 +1,12 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { useState, useEffect } from 'react';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import { session, tripsAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { tripsAPI, session } from '@/services/api';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 
 export default function TripDetailsScreen() {
-  const { tripId } = useLocalSearchParams();
+  const { tripId, leg } = useLocalSearchParams();
   const [trip, setTrip] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -15,7 +15,7 @@ export default function TripDetailsScreen() {
 
   useEffect(() => {
     loadTripDetails();
-  }, [tripId]);
+  }, [tripId, leg]);
 
   const loadTripDetails = async () => {
     try {
@@ -108,7 +108,22 @@ export default function TripDetailsScreen() {
 
       const allTrips = [...formattedDbTrips, ...mockTrips];
       const tripData = allTrips.find((t: any) => String(t.id) === String(tripId));
-      setTrip(tripData);
+      
+      // If this is a return leg, reverse pickup and dropoff locations
+      if (tripData && leg === 'return') {
+        console.log('Reversing locations for return leg');
+        setTrip({
+          ...tripData,
+          pickup_location: tripData.dropoff_location,
+          pickup_lat: tripData.dropoff_lat,
+          pickup_lng: tripData.dropoff_lng,
+          dropoff_location: tripData.pickup_location,
+          dropoff_lat: tripData.pickup_lat,
+          dropoff_lng: tripData.pickup_lng,
+        });
+      } else {
+        setTrip(tripData);
+      }
     } catch (error: any) {
       if (error.response?.status === 401) {
         Alert.alert('Session Expired', 'Please log in again');
@@ -189,6 +204,11 @@ export default function TripDetailsScreen() {
         </View>
 
         <View style={styles.statusRow}>
+          {leg && (
+            <View style={[styles.legBadge, { backgroundColor: leg === 'outbound' ? '#6366f1' : '#f59e0b', marginRight: 8 }]}>
+              <Text style={styles.legText}>{leg === 'outbound' ? 'OUTBOUND' : 'RETURN'}</Text>
+            </View>
+          )}
           <Text style={styles.statusLabel}>Status:</Text>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(trip.status) }]}>
             <Text style={styles.statusText}>{trip.status.toUpperCase()}</Text>
@@ -373,6 +393,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
+  },
+  legBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  legText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   statusText: {
     color: '#fff',
