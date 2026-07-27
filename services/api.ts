@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 // Using ngrok tunnel for development - works from anywhere
-const API_BASE_URL = 'https://unwearying-vaingloriously-cecelia.ngrok-free.dev/api';
+// const API_BASE_URL = 'https://unwearying-vaingloriously-cecelia.ngrok-free.dev/api';
+const API_BASE_URL = 'http://192.168.31.47:8000/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
