@@ -1,18 +1,21 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { session, tripsAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ActivityIndicator, Alert, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from 'react-native';
 
 export default function Dashboard() {
-  const [availableCount, setAvailableCount] = useState<number | string >('-');
-  const [acceptedCount, setAcceptedCount] = useState<number | string >('-');
-  const [rejectedCount, setRejectedCount] = useState<number | string >('-');
-  const [completedCount, setCompletedCount] = useState<number | string >('-');
+  const [availableCount, setAvailableCount] = useState<number | string>('-');
+  const [acceptedCount, setAcceptedCount] = useState<number | string>('-');
+  const [rejectedCount, setRejectedCount] = useState<number | string>('-');
+  const [completedCount, setCompletedCount] = useState<number | string>('-');
   const [currentTrip, setCurrentTrip] = useState<any>(null);
   const [urgentTrip, setUrgentTrip] = useState<any>(null);
-  const [elevenAMTrip, setElevenAMTrip] = useState<any>(null);
+  const [tripToStartNow, setTripToStartNow] = useState<any>(null);
+  const dismissedStartTrips = React.useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
@@ -75,10 +78,10 @@ export default function Dashboard() {
         const current = trips.find((t: any) => {
           if (t.driver_response !== 'accepted' || t.status === 'completed' || !t.is_active) return false;
           if (!t.start_date || !t.one_way_start_time) return false;
-          
+
           const startDate = new Date(t.start_date);
           const endDate = t.end_date ? new Date(t.end_date) : new Date(t.start_date);
-          
+
           const today = new Date(now);
           today.setHours(0, 0, 0, 0);
           const tripStartDay = new Date(startDate);
@@ -90,7 +93,7 @@ export default function Dashboard() {
             const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
             const tripTodayTime = new Date(now);
             tripTodayTime.setHours(hour, minute, second || 0, 0);
-            
+
             const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
             return diffMinutes >= -30 && diffMinutes <= 120; // Within 2 hours window
           }
@@ -107,10 +110,10 @@ export default function Dashboard() {
           const isPending = !t.driver_response || t.driver_response === 'pending';
           if (!isPending || t.status === 'completed' || t.is_active === false) return false;
           if (!t.start_date || !t.one_way_start_time) return false;
-          
+
           const startDate = new Date(t.start_date);
           const endDate = t.end_date ? new Date(t.end_date) : new Date(t.start_date);
-          
+
           const today = new Date(now);
           today.setHours(0, 0, 0, 0);
           const tripStartDay = new Date(startDate);
@@ -122,37 +125,13 @@ export default function Dashboard() {
             const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
             const tripTodayTime = new Date(now);
             tripTodayTime.setHours(hour, minute, second || 0, 0);
-            
+
             const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
             return diffMinutes >= 0 && diffMinutes <= 5;
           }
           return false;
         });
         setUrgentTrip(urgent);
-
-        // Check for 11:00 AM trip
-        const elevenAM = trips.find((t: any) => {
-          const isPending = !t.driver_response || t.driver_response === 'pending';
-          if (!isPending || t.status === 'completed' || t.is_active === false) return false;
-          if (!t.start_date || !t.one_way_start_time) return false;
-          
-          const startDate = new Date(t.start_date);
-          const endDate = t.end_date ? new Date(t.end_date) : new Date(t.start_date);
-          
-          const today = new Date(now);
-          today.setHours(0, 0, 0, 0);
-          const tripStartDay = new Date(startDate);
-          tripStartDay.setHours(0, 0, 0, 0);
-          const tripEndDay = new Date(endDate);
-          tripEndDay.setHours(0, 0, 0, 0);
-
-          if (today >= tripStartDay && today <= tripEndDay) {
-            const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
-            return hour === 11 && minute === 0;
-          }
-          return false;
-        });
-        setElevenAMTrip(elevenAM);
       } catch (error) {
         console.error('Failed to fetch dashboard counts:', error);
         setAvailableCount(0);
@@ -178,6 +157,76 @@ export default function Dashboard() {
     return () => Vibration.cancel();
   }, [urgentTrip]);
 
+  // Separate useEffect to check for trips that need to start
+  useEffect(() => {
+    const checkTripsToStart = async () => {
+      try {
+        const trips = await tripsAPI.getTrips(undefined, driverId, agencyId);
+        const now = new Date();
+
+        const startingNow = trips.find((t: any) => {
+          // Skip if this trip was already dismissed
+          if (dismissedStartTrips.current.has(String(t.id))) return false;
+          if (t.status === 'completed' || !t.is_active) return false;
+          if (!t.start_date) return false;
+
+          const startDate = new Date(t.start_date);
+          const endDate = t.end_date ? new Date(t.end_date) : new Date(t.start_date);
+
+          const today = new Date(now);
+          today.setHours(0, 0, 0, 0);
+          const tripStartDay = new Date(startDate);
+          tripStartDay.setHours(0, 0, 0, 0);
+          const tripEndDay = new Date(endDate);
+          tripEndDay.setHours(0, 0, 0, 0);
+
+          if (today >= tripStartDay && today <= tripEndDay) {
+            // Check one_way_start_time
+            if (t.one_way_start_time) {
+              const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
+              const tripTodayTime = new Date(now);
+              tripTodayTime.setHours(hour, minute, second || 0, 0);
+              const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
+              // If trip is between 15 mins before and 120 mins after
+              if (diffMinutes >= 0 && diffMinutes <= 2) {
+                return !dismissedStartTrips.current.has(String(t.id));
+              }
+            }
+
+            // Check two_way_start_time if exists
+            if (t.two_way_start_time) {
+              const [hour, minute, second] = t.two_way_start_time.split(':').map(Number);
+              const tripTodayTime = new Date(now);
+              tripTodayTime.setHours(hour, minute, second || 0, 0);
+              const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
+              console.log(`Trip ${t.id} two_way - diffMinutes: ${diffMinutes}`);
+              if (diffMinutes >= 0 && diffMinutes <= 2) return true;
+            }
+          }
+          return false;
+        });
+        console.log('Trip to start now:', startingNow);
+        setTripToStartNow(startingNow);
+      } catch (error) {
+        console.error('Failed to check trips to start:', error);
+      }
+    };
+
+    checkTripsToStart();
+    const interval = setInterval(checkTripsToStart, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    // Only vibrate for start trip if there is no urgent trip taking priority
+    if (tripToStartNow && !urgentTrip) {
+      Vibration.vibrate([500, 200, 500], true);
+    } else if (!urgentTrip) {
+      // Only cancel vibration if urgentTrip is also null (otherwise we might cancel urgent's vibration)
+      Vibration.cancel();
+    }
+  }, [tripToStartNow, urgentTrip]);
+
   const promptReject = (tripId: string | number) => {
     setRejectTripId(tripId);
     setRejectReason('');
@@ -190,9 +239,9 @@ export default function Dashboard() {
       Alert.alert('Required', 'Please enter a reason for rejecting the trip.');
       return;
     }
-    
+
     setRejectModalVisible(false);
-    
+
     try {
       await tripsAPI.rejectTrip(rejectTripId, driverId, rejectReason);
       Alert.alert('Declined', 'Trip Declined.');
@@ -221,9 +270,48 @@ export default function Dashboard() {
 
   const handleStartTrip = async (tripId: string | number) => {
     try {
-      await tripsAPI.acceptTrip(tripId, driverId);
+      // Request location permission
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission denied', 'Location permission is required to start trip.');
+        return;
+      }
+
+      // Get current location
+      const location = await Location.getCurrentPositionAsync({});
+      const { latitude, longitude, accuracy, speed } = location.coords;
+
+      // Build location data, only including accuracy/speed if they exist
+      const locationData: any = {
+        driver_id: driverId,
+        trip_id: tripId,
+        agency_id: agencyId,
+        latitude,
+        longitude,
+        company_id: session.user?.company_id,
+        start_date: tripToStartNow?.start_date,
+        end_date: tripToStartNow?.end_date || tripToStartNow?.start_date,
+      };
+      if (accuracy !== null) locationData.accuracy = accuracy;
+      if (speed !== null) locationData.speed = speed;
+
+      // Call location API to create location record
+      const locationResponse = await tripsAPI.startLocationTracking(locationData);
+      
+      if (locationResponse && locationResponse.location_id) {
+        await AsyncStorage.setItem('active_location_id', locationResponse.location_id.toString());
+      }
+
+      // Accept the trip (if it's not already accepted)
+      try {
+        await tripsAPI.acceptTrip(tripId, driverId);
+      } catch (acceptErr) {
+        console.warn("acceptTrip failed, it might already be accepted.", acceptErr);
+      }
+      
       Alert.alert('Success', 'Trip Started!');
-      setElevenAMTrip(null);
+      dismissedStartTrips.current.add(String(tripId));
+      setTripToStartNow(null);
     } catch (e) {
       Alert.alert('Error', 'Failed to start trip.');
     }
@@ -247,32 +335,84 @@ export default function Dashboard() {
       </View>
 
       {urgentTrip && (
-        <View style={[styles.urgentCard, { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: colors.danger }]}>
-          <Text style={[styles.urgentTitle, { color: colors.danger }]}>URGENT: TRIP STARTING SOON</Text>
-          <Text style={[styles.urgentText, { color: colors.textPrimary }]}>
-            Trip for {urgentTrip.passenger_name || urgentTrip.company_name} at {urgentTrip.starting_point} starts in less than 5 minutes!
-          </Text>
-          <View style={styles.urgentActions}>
-            <TouchableOpacity style={[styles.urgentBtn, { backgroundColor: colors.success }]} onPress={() => handleUrgentAction('accept')}>
-              <Text style={styles.urgentBtnText}>ACCEPT TRIP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.urgentBtn, { backgroundColor: colors.danger }]} onPress={() => handleUrgentAction('decline')}>
-              <Text style={styles.urgentBtnText}>DECLINE</Text>
-            </TouchableOpacity>
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={!!urgentTrip}
+          onRequestClose={() => setUrgentTrip(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.danger, borderWidth: 2 }]}>
+              <View style={{ alignItems: 'center', marginBottom: 15 }}>
+                <FontAwesome5 name="exclamation-circle" size={40} color={colors.danger} />
+                <Text style={{ fontSize: 20, fontWeight: '800', color: colors.danger, marginTop: 10, textAlign: 'center' }}>URGENT: TRIP STARTING SOON</Text>
+              </View>
+
+              <Text style={{ fontSize: 16, color: colors.textSecondary, textAlign: 'center', marginBottom: 20 }}>
+                Trip for <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{urgentTrip.passenger_name || urgentTrip.company_name}</Text> at <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{urgentTrip.starting_point}</Text> starts in less than 5 minutes!
+              </Text>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: colors.danger, marginRight: 10 }]}
+                  onPress={() => handleUrgentAction('decline')}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>DECLINE</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: colors.success }]}
+                  onPress={() => handleUrgentAction('accept')}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>ACCEPT TRIP</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
-        </View>
+        </Modal>
       )}
 
-      {elevenAMTrip && (
-        <View style={[styles.elevenAMCard, { backgroundColor: 'rgba(99, 102, 241, 0.1)', borderColor: colors.accent }]}>
-          <Text style={[styles.elevenAMTitle, { color: colors.accent }]}>11:00 AM TRIP</Text>
-          <Text style={[styles.elevenAMText, { color: colors.textPrimary }]}>
-            Trip for {elevenAMTrip.passenger_name || elevenAMTrip.company_name} at {elevenAMTrip.starting_point} starts at 11:00 AM.
-          </Text>
-          <TouchableOpacity style={[styles.startTripButton, { backgroundColor: colors.accent }]} onPress={() => handleStartTrip(elevenAMTrip.id)}>
-            <Text style={styles.startTripButtonText}>START TRIP</Text>
-          </TouchableOpacity>
-        </View>
+      {tripToStartNow && !urgentTrip && (
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={!!tripToStartNow && !urgentTrip}
+          onRequestClose={() => setTripToStartNow(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+              <View style={{ alignItems: 'center', marginBottom: 20 }}>
+                <FontAwesome5 name="car-side" size={40} color={colors.accent} />
+                <Text style={{ fontSize: 24, fontWeight: '800', color: colors.textPrimary, marginTop: 10 }}>Start Trip</Text>
+              </View>
+
+              <Text style={{ fontSize: 16, color: colors.textSecondary, textAlign: 'center', marginBottom: 20 }}>
+                It's time to start the trip for <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{tripToStartNow.passenger_name || tripToStartNow.company_name}</Text> at <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{tripToStartNow.starting_point}</Text>.
+              </Text>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalCancelButton, { borderColor: colors.border }]}
+                  onPress={() => {
+                    if (tripToStartNow) {
+                      dismissedStartTrips.current.add(String(tripToStartNow.id));
+                    }
+                    setTripToStartNow(null);
+                  }}
+                >
+                  <Text style={[styles.modalCancelText, { color: colors.textPrimary }]}>Close</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: colors.accent }]}
+                  onPress={() => handleStartTrip(tripToStartNow.id)}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Start Trip</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       )}
 
 
@@ -434,7 +574,7 @@ export default function Dashboard() {
           <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
             <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Reject Trip</Text>
             <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>Please provide a reason for rejecting this trip.</Text>
-            
+
             <TextInput
               style={[styles.modalInput, { color: colors.textPrimary, borderColor: colors.border }]}
               placeholder="e.g., Too far, Vehicle issue..."
@@ -444,7 +584,7 @@ export default function Dashboard() {
               multiline
               numberOfLines={3}
             />
-            
+
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalCancelButton, { borderColor: colors.border }]}
@@ -452,7 +592,7 @@ export default function Dashboard() {
               >
                 <Text style={[styles.modalCancelText, { color: colors.textPrimary }]}>Cancel</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalSubmitButton]}
                 onPress={submitReject}

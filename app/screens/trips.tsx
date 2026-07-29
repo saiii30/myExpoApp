@@ -2,6 +2,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loadSession, session, tripsAPI } from '@/services/api';
 // import { cancelTripNotifications, scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
 import { FontAwesome5 } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, FlatList, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -81,6 +82,47 @@ export default function TripsScreen() {
     };
     init();
   }, [activeTab, selectedDate]);
+
+  useEffect(() => {
+    // Continuously check for trips starting right now
+    const checkUpcomingTrips = () => {
+      if (!trips.length || startTripPopupVisible) return;
+
+      const now = new Date();
+      const upcomingTrip = trips.find((t: Trip) => {
+        if (t.status === 'completed' || !t.start_time) return false;
+
+        // We use the start_date and end_date to see if today is valid
+        if (!t.start_date) return false;
+
+        const startDate = new Date(t.start_date);
+        const endDate = t.end_date ? new Date(t.end_date) : new Date(t.start_date);
+
+        const today = new Date(now);
+        today.setHours(0, 0, 0, 0);
+        const tripStartDay = new Date(startDate);
+        tripStartDay.setHours(0, 0, 0, 0);
+        const tripEndDay = new Date(endDate);
+        tripEndDay.setHours(0, 0, 0, 0);
+
+        if (today >= tripStartDay && today <= tripEndDay) {
+          const tripStartTime = new Date(t.start_time);
+          // Show popup if it's the exact minute of the trip start time
+          return now.getHours() === tripStartTime.getHours() &&
+            now.getMinutes() === tripStartTime.getMinutes();
+        }
+        return false;
+      });
+
+      if (upcomingTrip) {
+        setTripToStart(upcomingTrip);
+        setStartTripPopupVisible(true);
+      }
+    };
+
+    const interval = setInterval(checkUpcomingTrips, 10000);
+    return () => clearInterval(interval);
+  }, [trips, startTripPopupVisible]);
 
   const loadTrips = async () => {
     try {
@@ -182,7 +224,7 @@ export default function TripsScreen() {
 
       // Format database trip objects
       const formattedDbTrips: Trip[] = [];
-      
+
       console.log('=== DEBUG: Raw trip data ===');
       console.log('Total trips:', filteredDbTrips.length);
       filteredDbTrips.forEach((ts: any, index: number) => {
@@ -194,7 +236,7 @@ export default function TripsScreen() {
           one_way_start_time: ts.one_way_start_time,
         });
       });
-      
+
       filteredDbTrips.forEach((ts: any) => {
         let passengerName = ts.company_name ? `Company: ${ts.company_name}` : 'No passengers';
         let passengerPhone = 'N/A';
@@ -236,11 +278,11 @@ export default function TripsScreen() {
           two_way_start_time: ts.two_way_start_time,
           condition: ts.two_way_start_time !== null && ts.two_way_start_time !== undefined
         });
-        
+
         if (ts.two_way_start_time !== null && ts.two_way_start_time !== undefined) {
           console.log(`Splitting trip ${ts.id} into outbound and return legs`);
           // Split into two separate trips: outbound and return
-          
+
           // Outbound leg
           const outboundTrip: Trip = {
             ...baseTrip,
@@ -329,22 +371,7 @@ export default function TripsScreen() {
       console.log(newTrips)
       setTrips(newTrips);
 
-      // Check for trips about to start (within 1 minute)
-      const now = new Date();
-      const upcomingTrip = newTrips.find((t: Trip) => {
-        if (t.status !== 'pending' || !t.start_time) return false;
-        
-        const tripStartTime = new Date(t.start_time);
-        const diffMinutes = (tripStartTime.getTime() - now.getTime()) / (1000 * 60);
-        
-        // Show popup if trip starts in 0-1 minute
-        return diffMinutes >= 0 && diffMinutes <= 1;
-      });
-
-      if (upcomingTrip && !startTripPopupVisible) {
-        setTripToStart(upcomingTrip);
-        setStartTripPopupVisible(true);
-      }
+      // The continuous check is now handled by a separate useEffect interval
 
       // --------------------
       // NEW TRIP NOTIFICATION
@@ -400,13 +427,13 @@ export default function TripsScreen() {
       // Extract original_id if this is a leg trip
       const originalId = String(tripId).includes('-') ? String(tripId).split('-')[0] : tripId;
       const isReturnLeg = String(tripId).includes('-return');
-      
+
       if (String(tripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip accepted locally');
         setTrips(prev => prev.filter(t => t.id !== tripId));
         return;
       }
-      
+
       if (isReturnLeg) {
         await tripsAPI.acceptReturnTrip(originalId);
         Alert.alert('Success', 'Return trip accepted successfully');
@@ -446,13 +473,13 @@ export default function TripsScreen() {
       // Extract original_id if this is a leg trip
       const originalId = String(rejectTripId).includes('-') ? String(rejectTripId).split('-')[0] : rejectTripId;
       const isReturnLeg = String(rejectTripId).includes('-return');
-      
+
       if (String(rejectTripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip rejected locally');
         setTrips(prev => prev.filter(t => t.id !== rejectTripId));
         return;
       }
-      
+
       if (isReturnLeg) {
         await tripsAPI.rejectReturnTrip(originalId, rejectReason);
         Alert.alert('Success', 'Return trip rejected');
@@ -473,35 +500,25 @@ export default function TripsScreen() {
     }
   };
 
-  const handleStartTrip = async () => {
-    if (!tripToStart) return;
-    
-    try {
-      const originalId = String(tripToStart.id).includes('-') ? String(tripToStart.id).split('-')[0] : tripToStart.id;
-      
-      await tripsAPI.acceptTrip(originalId, driverId);
-      Alert.alert('Success', 'Trip Started!');
-      setStartTripPopupVisible(false);
-      setTripToStart(null);
-      
-      // Refresh trips
-      loadTrips();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to start trip.');
-    }
-  };
+
 
   const handleComplete = async (tripId: string | number) => {
     try {
       // Extract original_id if this is a leg trip
       const originalId = String(tripId).includes('-') ? String(tripId).split('-')[0] : tripId;
-      
+
       if (String(tripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip completed locally');
         setTrips(prev => prev.filter(t => t.id !== tripId));
         return;
       }
-      await tripsAPI.completeTrip(originalId);
+
+      const locIdStr = await AsyncStorage.getItem('active_location_id');
+      const locationId = locIdStr ? parseInt(locIdStr, 10) : 0;
+
+      await tripsAPI.completeTrip(driverId, locationId);
+      await AsyncStorage.removeItem('active_location_id');
+
       Alert.alert('Success', 'Trip completed successfully');
 
       // if (Platform.OS === 'android' && isRunningInExpoGo()) {
@@ -591,22 +608,25 @@ export default function TripsScreen() {
 
 
       {item.status === 'accepted' && (
-        <TouchableOpacity
-          style={styles.completeButton}
-          onPress={() => handleComplete(item.id)}
-        >
-          <Text style={styles.actionButtonText}>Complete Trip</Text>
-        </TouchableOpacity>
+        <>
+
+          <TouchableOpacity
+            style={styles.completeButton}
+            onPress={() => handleComplete(item.id)}
+          >
+            <Text style={styles.actionButtonText}>Complete Trip</Text>
+          </TouchableOpacity>
+        </>
       )}
 
       <TouchableOpacity
         style={[styles.viewMapButton, { borderColor: colors.accent }]}
-        onPress={() => router.push({ 
-          pathname: '/screens/trip-details', 
-          params: { 
+        onPress={() => router.push({
+          pathname: '/screens/trip-details',
+          params: {
             tripId: item.original_id ? item.original_id.toString() : item.id.toString(),
             leg: item.leg || 'outbound'
-          } 
+          }
         })}
       >
         <Text style={[styles.viewMapButtonText, { color: colors.accent }]}>View Details & Map</Text>
@@ -738,7 +758,7 @@ export default function TripsScreen() {
               <FontAwesome5 name="car-side" size={32} color="#10b981" />
               <Text style={[styles.startTripPopupTitle, { color: colors.textPrimary }]}>Trip Starting Soon!</Text>
             </View>
-            
+
             <Text style={[styles.startTripPopupText, { color: colors.textSecondary }]}>
               Your trip is about to start. Are you ready to begin?
             </Text>
@@ -749,17 +769,17 @@ export default function TripsScreen() {
                 <Text style={[styles.startTripPopupDetailValue, { color: colors.textPrimary }]}>
                   {tripToStart.passenger_name || tripToStart.company_name}
                 </Text>
-                
+
                 <Text style={[styles.startTripPopupDetailLabel, { color: colors.textSecondary }]}>From:</Text>
                 <Text style={[styles.startTripPopupDetailValue, { color: colors.textPrimary }]}>
                   {tripToStart.pickup_location}
                 </Text>
-                
+
                 <Text style={[styles.startTripPopupDetailLabel, { color: colors.textSecondary }]}>To:</Text>
                 <Text style={[styles.startTripPopupDetailValue, { color: colors.textPrimary }]}>
                   {tripToStart.dropoff_location}
                 </Text>
-                
+
                 <Text style={[styles.startTripPopupDetailLabel, { color: colors.textSecondary }]}>Time:</Text>
                 <Text style={[styles.startTripPopupDetailValue, { color: colors.textPrimary }]}>
                   {tripToStart.start_time ? new Date(tripToStart.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
@@ -767,21 +787,7 @@ export default function TripsScreen() {
               </View>
             )}
 
-            <View style={styles.startTripPopupButtons}>
-              <TouchableOpacity
-                style={[styles.startTripPopupButton, styles.startTripPopupCancelButton, { borderColor: colors.border }]}
-                onPress={() => setStartTripPopupVisible(false)}
-              >
-                <Text style={[styles.startTripPopupCancelText, { color: colors.textPrimary }]}>Later</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.startTripPopupButton, styles.startTripPopupStartButton]}
-                onPress={() => handleStartTrip()}
-              >
-                <Text style={styles.startTripPopupStartText}>Start Trip</Text>
-              </TouchableOpacity>
-            </View>
+
           </View>
         </View>
       </Modal>

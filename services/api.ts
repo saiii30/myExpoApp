@@ -82,9 +82,46 @@ export const tripsAPI = {
     });
     return response.data;
   },
-  completeTrip: async (tripId: string | number) => {
-    const response = await api.put(`/trips/driver/${tripId}`, {
-      is_active: false
+  completeTrip: async (driverId: string | number, locationId: number) => {
+    // The new API expects location_id as Form data
+    const formData = new FormData();
+    formData.append('location_id', locationId.toString());
+
+    const response = await api.put(`/location/deactivate/${driverId}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+  startLocationTracking: async (data: {
+    driver_id: string | number;
+    trip_id: string | number;
+    agency_id: string;
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    speed?: number;
+    company_id?: string;
+    start_date?: string;
+    end_date?: string;
+  }) => {
+    const formData = new FormData();
+    formData.append('driver_id', data.driver_id.toString());
+    formData.append('trip_id', data.trip_id.toString());
+    formData.append('agency_id', data.agency_id);
+    formData.append('latitude', data.latitude.toString());
+    formData.append('longitude', data.longitude.toString());
+    if (data.accuracy !== undefined) formData.append('accuracy', data.accuracy.toString());
+    if (data.speed !== undefined) formData.append('speed', data.speed.toString());
+    if (data.company_id !== undefined) formData.append('company_id', data.company_id);
+    if (data.start_date !== undefined) formData.append('start_date', data.start_date);
+    if (data.end_date !== undefined) formData.append('end_date', data.end_date);
+
+    const response = await api.post('/mobile/location', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
     return response.data;
   },
