@@ -169,99 +169,13 @@ export default function TripsScreen() {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      // STEP 4: Filter trips for tabs
-      const filteredDbTrips = data.filter((t: any) => {
-        let isOngoingRecurring = false;
-        if (t.start_date && t.end_date && t.start_date !== t.end_date) {
-          const [endYear, endMonth, endDay] = t.end_date.split('-').map(Number);
-          const endDate = new Date(endYear, endMonth - 1, endDay);
-          endDate.setHours(0, 0, 0, 0);
-          const todayDate = new Date();
-          todayDate.setHours(0, 0, 0, 0);
-          if (endDate.getTime() > todayDate.getTime()) {
-            isOngoingRecurring = true;
-          }
-        }
-
-        const isFullyCompleted = t.status === 'completed' || (t.is_active === false && !isOngoingRecurring);
-        const isTodayCompleted = t.is_active === false && isOngoingRecurring;
-        const isDeclined = t.driver_response === 'declined';
-
-        if (activeTab === 'completed') {
-          return isFullyCompleted || isTodayCompleted || isDeclined;
-        }
-
-        if (isFullyCompleted || isDeclined) return false;
-
-        if (activeTab === 'current') {
-          if (isTodayCompleted) return false;
-          // Show trips where today is within the date range (start_date to end_date)
-          if (t.start_date) {
-            // Parse start_date manually to avoid timezone issues
-            const [startYear, startMonth, startDay] = t.start_date.split('-').map(Number);
-            const startDate = new Date(startYear, startMonth - 1, startDay);
-            startDate.setHours(0, 0, 0, 0);
-
-            // Parse end_date if available, otherwise use start_date
-            let endDate = startDate;
-            if (t.end_date) {
-              const [endYear, endMonth, endDay] = t.end_date.split('-').map(Number);
-              endDate = new Date(endYear, endMonth - 1, endDay);
-              endDate.setHours(0, 0, 0, 0);
-            }
-
-            // Check if today is within the range [startDate, endDate]
-            return today.getTime() >= startDate.getTime() && today.getTime() <= endDate.getTime();
-          }
-          return false;
-        }
-
-        if (activeTab === 'upcoming') {
-          // Show trips for selected date
-          if (t.start_date) {
-            // Parse start_date manually to avoid timezone issues
-            const [startYear, startMonth, startDay] = t.start_date.split('-').map(Number);
-            const startDate = new Date(startYear, startMonth - 1, startDay);
-            startDate.setHours(0, 0, 0, 0);
-
-            // Parse end_date if available, otherwise use start_date
-            let endDate = startDate;
-            if (t.end_date) {
-              const [endYear, endMonth, endDay] = t.end_date.split('-').map(Number);
-              endDate = new Date(endYear, endMonth - 1, endDay);
-              endDate.setHours(0, 0, 0, 0);
-            }
-
-            // Parse selected date
-            const selected = new Date(selectedDate);
-            selected.setHours(0, 0, 0, 0);
-
-            // Check if selected date is within the trip's date range
-            return selected.getTime() >= startDate.getTime() && selected.getTime() <= endDate.getTime();
-          }
-          return false;
-        }
-
-        return false;
-      });
-
-
-      // Format database trip objects
+      // Format database trip objects into individual legs FIRST
       const formattedDbTrips: Trip[] = [];
 
       console.log('=== DEBUG: Raw trip data ===');
-      console.log('Total trips:', filteredDbTrips.length);
-      filteredDbTrips.forEach((ts: any, index: number) => {
-        console.log(`Trip ${index}:`, {
-          id: ts.id,
-          two_way_isActive: ts.two_way_isActive,
-          two_way_start_time: ts.two_way_start_time,
-          one_way_isActive: ts.one_way_isActive,
-          one_way_start_time: ts.one_way_start_time,
-        });
-      });
+      console.log('Total trips:', data.length);
 
-      filteredDbTrips.forEach((ts: any) => {
+      data.forEach((ts: any) => {
         let passengerName = ts.company_name ? `Company: ${ts.company_name}` : 'No passengers';
         let passengerPhone = 'N/A';
         if (ts.route_point) {
@@ -295,25 +209,20 @@ export default function TripsScreen() {
           source: 'postgres',
           start_date: ts.start_date,
           end_date: ts.end_date,
-          is_active: ts.is_active,
         };
 
+        // Check completion flags for legs (handling boolean and string formats from DB)
+        const isOneWayCompleted = ts.one_way_isActive === false || ts.one_way_isActive === 'false' || ts.one_way_isActive === 0 || ts.one_way_is_active === false || ts.one_way_is_active === 'false' || ts.one_way_is_active === 0 || ts.status === 'completed';
+        const isTwoWayCompleted = ts.two_way_isActive === false || ts.two_way_isActive === 'false' || ts.two_way_isActive === 0 || ts.two_way_is_active === false || ts.two_way_is_active === 'false' || ts.two_way_is_active === 0 || ts.status === 'completed';
+
         // Check if this is a two-way trip
-        console.log(`Checking trip ${ts.id} for two-way:`, {
-          two_way_isActive: ts.two_way_isActive,
-          two_way_start_time: ts.two_way_start_time,
-          condition: ts.two_way_start_time !== null && ts.two_way_start_time !== undefined
-        });
-
         if (ts.two_way_start_time !== null && ts.two_way_start_time !== undefined) {
-          console.log(`Splitting trip ${ts.id} into outbound and return legs`);
-          // Split into two separate trips: outbound and return
-
           // Outbound leg
           const outboundTrip: Trip = {
             ...baseTrip,
             id: `${ts.id}-outbound`,
-            status: ts.driver_response === 'accepted' ? 'accepted' : (ts.driver_response === 'declined' ? 'rejected' : 'pending'),
+            status: isOneWayCompleted ? 'completed' : (ts.driver_response === 'accepted' ? 'accepted' : (ts.driver_response === 'declined' ? 'rejected' : 'pending')),
+            is_active: ts.is_active !== false && !isOneWayCompleted,
             start_time: (() => {
               const date = ts.start_date;
               const time = ts.one_way_start_time;
@@ -324,8 +233,8 @@ export default function TripsScreen() {
             })(),
             leg: 'outbound',
             two_way_start_time: ts.two_way_start_time,
-            two_way_isActive: ts.two_way_isActive,
-            one_way_isActive: ts.one_way_isActive,
+            two_way_isActive: ts.two_way_is_active ?? ts.two_way_isActive,
+            one_way_isActive: ts.one_way_is_active ?? ts.one_way_isActive,
             driver_response_two_way: ts.driver_response_two_way,
           };
           formattedDbTrips.push(outboundTrip);
@@ -341,7 +250,8 @@ export default function TripsScreen() {
             dropoff_location: ts.starting_point || 'Unknown End',
             dropoff_lat: ts.starting_lat,
             dropoff_lng: ts.starting_lng,
-            status: ts.driver_response_two_way === 'accepted' ? 'accepted' : (ts.driver_response_two_way === 'declined' ? 'rejected' : 'pending'),
+            status: isTwoWayCompleted ? 'completed' : (ts.driver_response_two_way === 'accepted' ? 'accepted' : (ts.driver_response_two_way === 'declined' ? 'rejected' : 'pending')),
+            is_active: ts.is_active !== false && !isTwoWayCompleted,
             start_time: (() => {
               const date = ts.start_date;
               const time = ts.two_way_start_time;
@@ -352,18 +262,18 @@ export default function TripsScreen() {
             })(),
             leg: 'return',
             two_way_start_time: ts.two_way_start_time,
-            two_way_isActive: ts.two_way_isActive,
-            one_way_isActive: ts.one_way_isActive,
+            two_way_isActive: ts.two_way_is_active ?? ts.two_way_isActive,
+            one_way_isActive: ts.one_way_is_active ?? ts.one_way_isActive,
             driver_response_two_way: ts.driver_response_two_way,
           };
           formattedDbTrips.push(returnTrip);
         } else {
-          console.log(`Trip ${ts.id} is one-way, creating single entry`);
-          // One-way trip - single entry
+          // One-way trip
           const oneWayTrip: Trip = {
             ...baseTrip,
             id: ts.id,
-            status: ts.driver_response === 'accepted' ? 'accepted' : (ts.driver_response === 'declined' ? 'rejected' : 'pending'),
+            status: isOneWayCompleted ? 'completed' : (ts.driver_response === 'accepted' ? 'accepted' : (ts.driver_response === 'declined' ? 'rejected' : 'pending')),
+            is_active: ts.is_active !== false && !isOneWayCompleted,
             start_time: (() => {
               const date = ts.start_date;
               const time = ts.one_way_start_time;
@@ -374,28 +284,117 @@ export default function TripsScreen() {
             })(),
             leg: undefined,
             two_way_start_time: ts.two_way_start_time,
-            two_way_isActive: ts.two_way_isActive,
-            one_way_isActive: ts.one_way_isActive,
+            two_way_isActive: ts.two_way_is_active ?? ts.two_way_isActive,
+            one_way_isActive: ts.one_way_is_active ?? ts.one_way_isActive,
             driver_response_two_way: ts.driver_response_two_way,
           };
           formattedDbTrips.push(oneWayTrip);
         }
       });
 
+      // Filter trips for tabs based on leg properties
+      const filteredTrips = formattedDbTrips.filter((t: any) => {
 
+        let isActive = true;
 
+        if (t.leg === 'outbound' || !t.leg) {
+          // If it explicitly says false, it's completed
+          if (t.one_way_isActive === false || t.one_way_isActive === 'false' || t.one_way_isActive === 0 ||
+            t.one_way_is_active === false || t.one_way_is_active === 'false' || t.one_way_is_active === 0) {
+            isActive = false;
+          }
+        } else if (t.leg === 'return') {
+          // If it explicitly says false, it's completed
+          if (t.two_way_isActive === false || t.two_way_isActive === 'false' || t.two_way_isActive === 0 ||
+            t.two_way_is_active === false || t.two_way_is_active === 'false' || t.two_way_is_active === 0) {
+            isActive = false;
+          }
+        }
 
+        // Global statuses that mean it's done
+        if (t.status === 'completed' || t.status === 'rejected') {
+          isActive = false;
+        }
 
+        // --- FUTURE DATE OVERRIDE ---
+        // If this is a recurring trip and we are viewing a strictly future date in the upcoming tab,
+        // it hasn't happened yet! Even if the DB says 'false' (because today's run is done), 
+        // tomorrow's run should be treated as active and pending.
+        if (activeTab === 'upcoming' && t.end_date && t.status !== 'rejected') {
+            const selected = new Date(selectedDate);
+            selected.setHours(0, 0, 0, 0);
+            
+            if (selected.getTime() > today.getTime()) {
+                const [endYear, endMonth, endDay] = t.end_date.split('-').map(Number);
+                const endDateObj = new Date(endYear, endMonth - 1, endDay);
+                endDateObj.setHours(0, 0, 0, 0);
+                
+                // If the future date falls within the trip's schedule, it's active for that day
+                if (endDateObj.getTime() >= selected.getTime()) {
+                    isActive = true;
+                }
+            }
+        }
 
-      const newTrips = [...formattedDbTrips];
+        if (activeTab === 'completed') {
+          return !isActive;
+        }
+
+        if (activeTab === 'current') {
+          // For current tab only, hide completed trips
+          if (!isActive) return false;
+          
+          if (t.start_date) {
+            const [startYear, startMonth, startDay] = t.start_date.split('-').map(Number);
+            const startDate = new Date(startYear, startMonth - 1, startDay);
+            startDate.setHours(0, 0, 0, 0);
+
+            let endDate = startDate;
+            if (t.end_date) {
+              const [endYear, endMonth, endDay] = t.end_date.split('-').map(Number);
+              endDate = new Date(endYear, endMonth - 1, endDay);
+              endDate.setHours(0, 0, 0, 0);
+            }
+
+            return today.getTime() >= startDate.getTime() && today.getTime() <= endDate.getTime();
+          }
+          return false;
+        }
+
+        if (activeTab === 'upcoming') {
+          // Show trips for selected date
+          if (t.start_date) {
+            const [startYear, startMonth, startDay] = t.start_date.split('-').map(Number);
+            const startDate = new Date(startYear, startMonth - 1, startDay);
+            startDate.setHours(0, 0, 0, 0);
+
+            let endDate = startDate;
+            if (t.end_date) {
+              const [endYear, endMonth, endDay] = t.end_date.split('-').map(Number);
+              endDate = new Date(endYear, endMonth - 1, endDay);
+              endDate.setHours(0, 0, 0, 0);
+            }
+
+            const selected = new Date(selectedDate);
+            selected.setHours(0, 0, 0, 0);
+
+            return selected.getTime() >= startDate.getTime() && selected.getTime() <= endDate.getTime();
+          }
+          return false;
+        }
+
+        return false;
+      });
+
       // Sort all trips by start time
-      newTrips.sort((a: any, b: any) => {
+      filteredTrips.sort((a: any, b: any) => {
         const timeA = a.start_time ? new Date(a.start_time).getTime() : 0;
         const timeB = b.start_time ? new Date(b.start_time).getTime() : 0;
         return timeA - timeB;
       });
-      console.log(newTrips)
-      setTrips(newTrips);
+
+      console.log(filteredTrips);
+      setTrips(filteredTrips);
 
       // The continuous check is now handled by a separate useEffect interval
 
@@ -448,43 +447,7 @@ export default function TripsScreen() {
     }
   };
 
-  const handleAccept = async (tripId: string | number) => {
-    try {
-      // Extract original_id if this is a leg trip
-      const originalId = String(tripId).includes('-') ? String(tripId).split('-')[0] : tripId;
-      const isReturnLeg = String(tripId).includes('-return');
 
-      if (String(tripId).startsWith('mock-')) {
-        Alert.alert('Success (Mock)', 'Mock trip accepted locally');
-        setTrips(prev => prev.filter(t => t.id !== tripId));
-        return;
-      }
-
-      if (isReturnLeg) {
-        await tripsAPI.acceptReturnTrip(originalId);
-        Alert.alert('Success', 'Return trip accepted successfully');
-      } else {
-        await tripsAPI.acceptTrip(originalId, driverId);
-        Alert.alert('Success', 'Trip accepted successfully');
-      }
-
-      // if (Platform.OS === 'android' && isRunningInExpoGo()) {
-      //   const trip = trips.find(t => t.id === tripId);
-      //   const name = trip ? trip.passenger_name : 'Passenger';
-      //   showLocalNotification('Trip Accepted', `You have accepted the trip for ${name}.`);
-      // }
-
-      loadTrips();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to accept trip');
-    }
-  };
-
-  const promptReject = (tripId: string | number) => {
-    setRejectTripId(tripId);
-    setRejectReason('');
-    setRejectModalVisible(true);
-  };
 
   const submitReject = async () => {
     if (!rejectTripId) return;
@@ -607,7 +570,7 @@ export default function TripsScreen() {
       today.setHours(0, 0, 0, 0);
       const selected = new Date(selectedDate);
       selected.setHours(0, 0, 0, 0);
-      
+
       if (selected.getTime() > today.getTime()) {
         displayStatus = 'pending';
       } else if (selected.getTime() === today.getTime() && item.is_active === false) {
