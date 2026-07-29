@@ -50,7 +50,7 @@ export default function TripsScreen() {
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectTripId, setRejectTripId] = useState<string | number | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [activeTab, setActiveTab] = useState<'current' | 'upcoming' | 'completed'>('current');
+  const [activeTab, setActiveTab] = useState<'current' | 'upcoming' | 'completed' | 'rejected'>('current');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date(Date.now() + 24 * 60 * 60 * 1000)); // Default to tomorrow
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [startTripPopupVisible, setStartTripPopupVisible] = useState(false);
@@ -221,7 +221,7 @@ export default function TripsScreen() {
           const outboundTrip: Trip = {
             ...baseTrip,
             id: `${ts.id}-outbound`,
-            status: isOneWayCompleted ? 'completed' : (ts.driver_response === 'accepted' ? 'accepted' : (ts.driver_response === 'declined' ? 'rejected' : 'pending')),
+            status: ts.driver_response === 'declined' ? 'rejected' : (isOneWayCompleted ? 'completed' : (ts.driver_response === 'accepted' ? 'accepted' : 'pending')),
             is_active: ts.is_active !== false && !isOneWayCompleted,
             start_time: (() => {
               const date = ts.start_date;
@@ -250,7 +250,7 @@ export default function TripsScreen() {
             dropoff_location: ts.starting_point || 'Unknown End',
             dropoff_lat: ts.starting_lat,
             dropoff_lng: ts.starting_lng,
-            status: isTwoWayCompleted ? 'completed' : (ts.driver_response_two_way === 'accepted' ? 'accepted' : (ts.driver_response_two_way === 'declined' ? 'rejected' : 'pending')),
+            status: ts.driver_response_two_way === 'declined' ? 'rejected' : (isTwoWayCompleted ? 'completed' : (ts.driver_response_two_way === 'accepted' ? 'accepted' : 'pending')),
             is_active: ts.is_active !== false && !isTwoWayCompleted,
             start_time: (() => {
               const date = ts.start_date;
@@ -272,7 +272,7 @@ export default function TripsScreen() {
           const oneWayTrip: Trip = {
             ...baseTrip,
             id: ts.id,
-            status: isOneWayCompleted ? 'completed' : (ts.driver_response === 'accepted' ? 'accepted' : (ts.driver_response === 'declined' ? 'rejected' : 'pending')),
+            status: ts.driver_response === 'declined' ? 'rejected' : (isOneWayCompleted ? 'completed' : (ts.driver_response === 'accepted' ? 'accepted' : 'pending')),
             is_active: ts.is_active !== false && !isOneWayCompleted,
             start_time: (() => {
               const date = ts.start_date;
@@ -321,29 +321,33 @@ export default function TripsScreen() {
         // it hasn't happened yet! Even if the DB says 'false' (because today's run is done), 
         // tomorrow's run should be treated as active and pending.
         if (activeTab === 'upcoming' && t.end_date && t.status !== 'rejected') {
-            const selected = new Date(selectedDate);
-            selected.setHours(0, 0, 0, 0);
-            
-            if (selected.getTime() > today.getTime()) {
-                const [endYear, endMonth, endDay] = t.end_date.split('-').map(Number);
-                const endDateObj = new Date(endYear, endMonth - 1, endDay);
-                endDateObj.setHours(0, 0, 0, 0);
-                
-                // If the future date falls within the trip's schedule, it's active for that day
-                if (endDateObj.getTime() >= selected.getTime()) {
-                    isActive = true;
-                }
+          const selected = new Date(selectedDate);
+          selected.setHours(0, 0, 0, 0);
+
+          if (selected.getTime() > today.getTime()) {
+            const [endYear, endMonth, endDay] = t.end_date.split('-').map(Number);
+            const endDateObj = new Date(endYear, endMonth - 1, endDay);
+            endDateObj.setHours(0, 0, 0, 0);
+
+            // If the future date falls within the trip's schedule, it's active for that day
+            if (endDateObj.getTime() >= selected.getTime()) {
+              isActive = true;
             }
+          }
+        }
+
+        if (activeTab === 'rejected') {
+          return t.status === 'rejected';
         }
 
         if (activeTab === 'completed') {
-          return !isActive;
+          return !isActive && t.status !== 'rejected';
         }
 
         if (activeTab === 'current') {
           // For current tab only, hide completed trips
           if (!isActive) return false;
-          
+
           if (t.start_date) {
             const [startYear, startMonth, startDay] = t.start_date.split('-').map(Number);
             const startDate = new Date(startYear, startMonth - 1, startDay);
@@ -563,7 +567,9 @@ export default function TripsScreen() {
   const renderTrip = ({ item }: { item: Trip }) => {
     let displayStatus = item.status;
 
-    if (activeTab === 'completed') {
+    if (activeTab === 'rejected') {
+      displayStatus = 'rejected';
+    } else if (activeTab === 'completed') {
       displayStatus = 'completed';
     } else if (activeTab === 'upcoming') {
       const today = new Date();
@@ -573,10 +579,16 @@ export default function TripsScreen() {
 
       if (selected.getTime() > today.getTime()) {
         displayStatus = 'pending';
-      } else if (selected.getTime() === today.getTime() && item.is_active === false) {
+      } else if (selected.getTime() === today.getTime()) {
+        if (item.status === 'rejected') {
+          displayStatus = 'rejected';
+        } else if (item.is_active === false) {
+          displayStatus = 'completed';
+        }
+      } else if (selected.getTime() < today.getTime()) {
         displayStatus = 'completed';
       }
-    } else if (item.is_active === false) {
+    } else if (item.is_active === false && item.status !== 'rejected') {
       displayStatus = 'completed';
     }
 
@@ -721,6 +733,12 @@ export default function TripsScreen() {
           onPress={() => setActiveTab('completed')}
         >
           <Text style={[styles.tabText, activeTab === 'completed' ? { color: '#ffffff' } : { color: colors.textSecondary }]}>Completed</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'rejected' ? { backgroundColor: colors.activeTabBg, borderColor: colors.accent } : { backgroundColor: colors.inactiveTabBg, borderColor: colors.border }]}
+          onPress={() => setActiveTab('rejected')}
+        >
+          <Text style={[styles.tabText, activeTab === 'rejected' ? { color: '#ffffff' } : { color: colors.textSecondary }]}>Rejected</Text>
         </TouchableOpacity>
       </View>
 
