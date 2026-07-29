@@ -1,5 +1,5 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { loadSession, session, tripsAPI, activeSession, api } from '@/services/api';
+import { activeSession, api, loadSession, session, tripsAPI } from '@/services/api';
 // import { cancelTripNotifications, scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
 import { FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -28,6 +28,8 @@ interface Trip {
   start_time?: string; // Trip start time for scheduling
   source?: string;
   company_name?: string;
+  is_active?: boolean;
+  is_started?: boolean;
   trip_type?: string;
   way?: string;
   start_date?: string;
@@ -129,6 +131,16 @@ export default function TripsScreen() {
       setLoading(true);
       const data = await tripsAPI.getTrips(undefined, driverId, agencyId);
 
+      // Fetch active locations to see which trips are actually started right now
+      let activeLocationTripIds = new Set<string>();
+      try {
+        const allLocsRes = await api.get('/mobile/locations/all');
+        const activeLocs = allLocsRes.data.filter((loc: any) => loc.is_active === true);
+        activeLocs.forEach((loc: any) => activeLocationTripIds.add(String(loc.trip_id)));
+      } catch (e) {
+        console.warn("Failed to fetch locations for is_started flag");
+      }
+
 
 
       // STEP 1: Get all active trips
@@ -159,18 +171,30 @@ export default function TripsScreen() {
 
       // STEP 4: Filter trips for tabs
       const filteredDbTrips = data.filter((t: any) => {
-        const isCompleted =
-          t.status === 'completed' ||
-          t.is_active === false ||
-          t.driver_response === 'declined';
-
-        if (activeTab === 'completed') {
-          return isCompleted;
+        let isOngoingRecurring = false;
+        if (t.start_date && t.end_date && t.start_date !== t.end_date) {
+          const [endYear, endMonth, endDay] = t.end_date.split('-').map(Number);
+          const endDate = new Date(endYear, endMonth - 1, endDay);
+          endDate.setHours(0, 0, 0, 0);
+          const todayDate = new Date();
+          todayDate.setHours(0, 0, 0, 0);
+          if (endDate.getTime() > todayDate.getTime()) {
+            isOngoingRecurring = true;
+          }
         }
 
-        if (isCompleted) return false;
+        const isFullyCompleted = t.status === 'completed' || (t.is_active === false && !isOngoingRecurring);
+        const isTodayCompleted = t.is_active === false && isOngoingRecurring;
+        const isDeclined = t.driver_response === 'declined';
+
+        if (activeTab === 'completed') {
+          return isFullyCompleted || isTodayCompleted || isDeclined;
+        }
+
+        if (isFullyCompleted || isDeclined) return false;
 
         if (activeTab === 'current') {
+          if (isTodayCompleted) return false;
           // Show trips where today is within the date range (start_date to end_date)
           if (t.start_date) {
             // Parse start_date manually to avoid timezone issues
@@ -256,6 +280,7 @@ export default function TripsScreen() {
 
         const baseTrip = {
           original_id: ts.id,
+          is_started: activeLocationTripIds.has(String(ts.id)),
           passenger_name: passengerName,
           passenger_phone: passengerPhone,
           pickup_location: ts.starting_point || 'Unknown Start',
@@ -270,6 +295,7 @@ export default function TripsScreen() {
           source: 'postgres',
           start_date: ts.start_date,
           end_date: ts.end_date,
+          is_active: ts.is_active,
         };
 
         // Check if this is a two-way trip
@@ -551,10 +577,10 @@ export default function TripsScreen() {
       }
 
       await tripsAPI.completeTrip(driverId, locationId);
-      
+
       try {
         await AsyncStorage.removeItem('active_location_id');
-      } catch (e) {}
+      } catch (e) { }
       activeSession.location_id = null;
 
       Alert.alert('Success', 'Trip completed successfully');
@@ -571,106 +597,126 @@ export default function TripsScreen() {
     }
   };
 
-  const renderTrip = ({ item }: { item: Trip }) => (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={styles.cardHeader}>
-        <Text style={[styles.passengerName, { color: colors.textPrimary }]}>{item.passenger_name}</Text>
-        <View style={styles.headerBadges}>
-          {item.leg && (
-            <View style={[styles.legBadge, { backgroundColor: item.leg === 'outbound' ? '#6366f1' : '#f59e0b' }]}>
-              <Text style={styles.legText}>{item.leg === 'outbound' ? 'OUTBOUND' : 'RETURN'}</Text>
+  const renderTrip = ({ item }: { item: Trip }) => {
+    let displayStatus = item.status;
+
+    if (activeTab === 'completed') {
+      displayStatus = 'completed';
+    } else if (activeTab === 'upcoming') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const selected = new Date(selectedDate);
+      selected.setHours(0, 0, 0, 0);
+      
+      if (selected.getTime() > today.getTime()) {
+        displayStatus = 'pending';
+      } else if (selected.getTime() === today.getTime() && item.is_active === false) {
+        displayStatus = 'completed';
+      }
+    } else if (item.is_active === false) {
+      displayStatus = 'completed';
+    }
+
+    return (
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.cardHeader}>
+          <Text style={[styles.passengerName, { color: colors.textPrimary }]}>{item.passenger_name}</Text>
+          <View style={styles.headerBadges}>
+            {item.leg && (
+              <View style={[styles.legBadge, { backgroundColor: item.leg === 'outbound' ? '#6366f1' : '#f59e0b' }]}>
+                <Text style={styles.legText}>{item.leg === 'outbound' ? 'OUTBOUND' : 'RETURN'}</Text>
+              </View>
+            )}
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(displayStatus) }]}>
+              <Text style={styles.statusText}>{displayStatus.toUpperCase()}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Styled Timeline Map Segment */}
+        <View style={styles.timelineContainer}>
+          <View style={styles.timelineLeft}>
+            <View style={[styles.timelineDot, { backgroundColor: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }]} />
+            <View style={[styles.timelineLine, { backgroundColor: colors.border }]} />
+            <View style={[styles.timelineDot, { backgroundColor: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }]} />
+          </View>
+          <View style={styles.timelineRight}>
+            <View style={styles.locationGroup}>
+              <Text style={styles.locationLabel}>PICKUP LOCATION</Text>
+              <Text style={[styles.locationText, { color: colors.textSecondary }]} numberOfLines={1}>{item.pickup_location}</Text>
+            </View>
+            <View style={{ height: 20 }} />
+            <View style={styles.locationGroup}>
+              <Text style={styles.locationLabel}>DROPOFF LOCATION</Text>
+              <Text style={[styles.locationText, { color: colors.textSecondary }]} numberOfLines={1}>{item.dropoff_location}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={[styles.detailsRow, { borderTopColor: colors.border }]}>
+          {item.start_date && (
+            <View style={styles.detailItem}>
+              <View style={styles.detailIconContainer}>
+                <FontAwesome5 name="calendar-alt" size={12} color="#38bdf8" />
+              </View>
+              <Text style={[styles.detailText, { color: colors.textSecondary }]}>
+                {item.start_date}{item.end_date && item.end_date !== item.start_date ? ` - ${item.end_date}` : ''}
+              </Text>
             </View>
           )}
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-            <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Styled Timeline Map Segment */}
-      <View style={styles.timelineContainer}>
-        <View style={styles.timelineLeft}>
-          <View style={[styles.timelineDot, { backgroundColor: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }]} />
-          <View style={[styles.timelineLine, { backgroundColor: colors.border }]} />
-          <View style={[styles.timelineDot, { backgroundColor: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }]} />
-        </View>
-        <View style={styles.timelineRight}>
-          <View style={styles.locationGroup}>
-            <Text style={styles.locationLabel}>PICKUP LOCATION</Text>
-            <Text style={[styles.locationText, { color: colors.textSecondary }]} numberOfLines={1}>{item.pickup_location}</Text>
-          </View>
-          <View style={{ height: 20 }} />
-          <View style={styles.locationGroup}>
-            <Text style={styles.locationLabel}>DROPOFF LOCATION</Text>
-            <Text style={[styles.locationText, { color: colors.textSecondary }]} numberOfLines={1}>{item.dropoff_location}</Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={[styles.detailsRow, { borderTopColor: colors.border }]}>
-        {item.start_date && (
+          {item.start_time && (
+            <View style={styles.detailItem}>
+              <View style={styles.detailIconContainer}>
+                <FontAwesome5 name="clock" size={12} color="#38bdf8" />
+              </View>
+              <Text style={[styles.detailText, { color: colors.textSecondary }]}>
+                {new Date(item.start_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
+              </Text>
+            </View>
+          )}
+          {item.distance && (
+            <View style={styles.detailItem}>
+              <View style={styles.detailIconContainer}>
+                <FontAwesome5 name="road" size={12} color="#38bdf8" />
+              </View>
+              <Text style={[styles.detailText, { color: colors.textSecondary }]}>{item.distance} km</Text>
+            </View>
+          )}
           <View style={styles.detailItem}>
             <View style={styles.detailIconContainer}>
-              <FontAwesome5 name="calendar-alt" size={12} color="#38bdf8" />
+              <FontAwesome5 name="phone" size={12} color="#38bdf8" />
             </View>
-            <Text style={[styles.detailText, { color: colors.textSecondary }]}>
-              {item.start_date}{item.end_date && item.end_date !== item.start_date ? ` - ${item.end_date}` : ''}
-            </Text>
+            <Text style={[styles.detailText, { color: colors.textSecondary }]}>{item.passenger_phone}</Text>
           </View>
-        )}
-        {item.start_time && (
-          <View style={styles.detailItem}>
-            <View style={styles.detailIconContainer}>
-              <FontAwesome5 name="clock" size={12} color="#38bdf8" />
-            </View>
-            <Text style={[styles.detailText, { color: colors.textSecondary }]}>
-              {new Date(item.start_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
-            </Text>
-          </View>
-        )}
-        {item.distance && (
-          <View style={styles.detailItem}>
-            <View style={styles.detailIconContainer}>
-              <FontAwesome5 name="road" size={12} color="#38bdf8" />
-            </View>
-            <Text style={[styles.detailText, { color: colors.textSecondary }]}>{item.distance} km</Text>
-          </View>
-        )}
-        <View style={styles.detailItem}>
-          <View style={styles.detailIconContainer}>
-            <FontAwesome5 name="phone" size={12} color="#38bdf8" />
-          </View>
-          <Text style={[styles.detailText, { color: colors.textSecondary }]}>{item.passenger_phone}</Text>
         </View>
+
+
+        {item.status === 'accepted' && activeTab === 'current' && item.is_active !== false && item.is_started === true && (
+          <>
+            <TouchableOpacity
+              style={styles.completeButton}
+              onPress={() => handleComplete(item.id)}
+            >
+              <Text style={styles.actionButtonText}>Complete Trip</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        <TouchableOpacity
+          style={[styles.viewMapButton, { borderColor: colors.accent }]}
+          onPress={() => router.push({
+            pathname: '/screens/trip-details',
+            params: {
+              tripId: item.original_id ? item.original_id.toString() : item.id.toString(),
+              leg: item.leg || 'outbound'
+            }
+          })}
+        >
+          <Text style={[styles.viewMapButtonText, { color: colors.accent }]}>View Details & Map</Text>
+        </TouchableOpacity>
       </View>
-
-
-      {item.status === 'accepted' && activeTab === 'current' && (
-        <>
-
-          <TouchableOpacity
-            style={styles.completeButton}
-            onPress={() => handleComplete(item.id)}
-          >
-            <Text style={styles.actionButtonText}>Complete Trip</Text>
-          </TouchableOpacity>
-        </>
-      )}
-
-      <TouchableOpacity
-        style={[styles.viewMapButton, { borderColor: colors.accent }]}
-        onPress={() => router.push({
-          pathname: '/screens/trip-details',
-          params: {
-            tripId: item.original_id ? item.original_id.toString() : item.id.toString(),
-            leg: item.leg || 'outbound'
-          }
-        })}
-      >
-        <Text style={[styles.viewMapButtonText, { color: colors.accent }]}>View Details & Map</Text>
-      </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -784,7 +830,7 @@ export default function TripsScreen() {
       </Modal>
 
       {/* Start Trip Popup */}
-      <Modal
+      {/* <Modal
         animationType="fade"
         transparent={true}
         visible={startTripPopupVisible}
@@ -828,7 +874,7 @@ export default function TripsScreen() {
 
           </View>
         </View>
-      </Modal>
+      </Modal> */}
 
       {/* Calendar Modal */}
       <Modal
