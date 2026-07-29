@@ -32,6 +32,11 @@ export const loadSession = async () => {
   // Session details are managed in memory during runtime
 };
 
+// Fallback for AsyncStorage if it crashes
+export const activeSession: { location_id: number | null } = {
+  location_id: null
+};
+
 export const setAuthToken = (token: string | null) => {
   if (token) {
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -87,7 +92,7 @@ export const tripsAPI = {
     const formData = new FormData();
     formData.append('location_id', locationId.toString());
 
-    const response = await api.put(`/location/deactivate/${driverId}`, formData, {
+    const response = await api.put(`mobile/location/deactivate/${driverId}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },

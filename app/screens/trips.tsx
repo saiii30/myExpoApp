@@ -1,5 +1,5 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { loadSession, session, tripsAPI } from '@/services/api';
+import { loadSession, session, tripsAPI, activeSession, api } from '@/services/api';
 // import { cancelTripNotifications, scheduleMultipleTripNotifications, showLocalNotification, TripNotification } from '@/services/notifications';
 import { FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -504,8 +504,13 @@ export default function TripsScreen() {
 
   const handleComplete = async (tripId: string | number) => {
     try {
-      // Extract original_id if this is a leg trip
-      const originalId = String(tripId).includes('-') ? String(tripId).split('-')[0] : tripId;
+      // Extract original_id if this is a leg trip (safely handle UUIDs)
+      let originalId = String(tripId);
+      if (originalId.endsWith('-outbound')) {
+        originalId = originalId.replace('-outbound', '');
+      } else if (originalId.endsWith('-return')) {
+        originalId = originalId.replace('-return', '');
+      }
 
       if (String(tripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip completed locally');
@@ -513,11 +518,44 @@ export default function TripsScreen() {
         return;
       }
 
-      const locIdStr = await AsyncStorage.getItem('active_location_id');
-      const locationId = locIdStr ? parseInt(locIdStr, 10) : 0;
+      let locationId = activeSession.location_id || 0;
+      if (locationId === 0) {
+        try {
+          const locIdStr = await AsyncStorage.getItem('active_location_id');
+          if (locIdStr) locationId = parseInt(locIdStr, 10);
+        } catch (storageErr) {
+          console.warn("AsyncStorage unavailable, relying on activeSession");
+        }
+      }
+
+      // ROBUST FALLBACK: If local storage and memory both failed (e.g. app was reloaded),
+      // we can fetch the active location ID directly from the backend!
+      if (locationId === 0) {
+        try {
+          const allLocationsRes = await api.get('/mobile/locations/all');
+          const allLocations = allLocationsRes.data;
+          // Find the active location for THIS trip
+          const activeLoc = allLocations.find((loc: any) => loc.trip_id === originalId && loc.is_active === true);
+          if (activeLoc && activeLoc.id) {
+            locationId = activeLoc.id;
+            console.log("Successfully recovered location_id from backend:", locationId);
+          }
+        } catch (fetchErr) {
+          console.error("Failed to recover location_id from backend", fetchErr);
+        }
+      }
+
+      if (locationId === 0) {
+        Alert.alert('Error', 'Could not find active location tracking for this trip. The backend might have already deactivated it.');
+        return;
+      }
 
       await tripsAPI.completeTrip(driverId, locationId);
-      await AsyncStorage.removeItem('active_location_id');
+      
+      try {
+        await AsyncStorage.removeItem('active_location_id');
+      } catch (e) {}
+      activeSession.location_id = null;
 
       Alert.alert('Success', 'Trip completed successfully');
 
@@ -607,7 +645,7 @@ export default function TripsScreen() {
       </View>
 
 
-      {item.status === 'accepted' && (
+      {item.status === 'accepted' && activeTab === 'current' && (
         <>
 
           <TouchableOpacity

@@ -1,5 +1,5 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { session, tripsAPI } from '@/services/api';
+import { session, tripsAPI, activeSession } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
@@ -299,7 +299,12 @@ export default function Dashboard() {
       const locationResponse = await tripsAPI.startLocationTracking(locationData);
       
       if (locationResponse && locationResponse.location_id) {
-        await AsyncStorage.setItem('active_location_id', locationResponse.location_id.toString());
+        activeSession.location_id = locationResponse.location_id;
+        try {
+          await AsyncStorage.setItem('active_location_id', locationResponse.location_id.toString());
+        } catch (storageErr) {
+          console.warn("AsyncStorage not available, skipping local save.", storageErr);
+        }
       }
 
       // Accept the trip (if it's not already accepted)
@@ -312,8 +317,10 @@ export default function Dashboard() {
       Alert.alert('Success', 'Trip Started!');
       dismissedStartTrips.current.add(String(tripId));
       setTripToStartNow(null);
-    } catch (e) {
-      Alert.alert('Error', 'Failed to start trip.');
+    } catch (e: any) {
+      console.error("Start Trip Error: ", e);
+      const errorMessage = e?.response?.data?.detail || e?.message || JSON.stringify(e);
+      Alert.alert('Error', `Failed to start trip: ${errorMessage}`);
     }
   };
 
