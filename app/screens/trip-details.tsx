@@ -129,6 +129,16 @@ export default function TripDetailsScreen() {
           }
         }
         
+        const isOneWayCompleted = ts.one_way_isActive === false || ts.one_way_is_active === false || ts.status === 'completed';
+        const isTwoWayCompleted = ts.two_way_isActive === false || ts.two_way_is_active === false || ts.status === 'completed';
+        
+        let computedStatus = 'pending';
+        if (leg === 'return') {
+          computedStatus = ts.driver_response_two_way === 'declined' ? 'rejected' : (isTwoWayCompleted ? 'completed' : (ts.driver_response_two_way === 'accepted' ? 'accepted' : 'pending'));
+        } else {
+          computedStatus = ts.driver_response === 'declined' ? 'rejected' : (isOneWayCompleted ? 'completed' : (ts.driver_response === 'accepted' ? 'accepted' : 'pending'));
+        }
+        
         return {
           id: ts.id,
           passenger_name: passengerName,
@@ -140,7 +150,7 @@ export default function TripDetailsScreen() {
           dropoff_location: ts.end_point || 'Unknown End',
           dropoff_lat: ts.end_lat,
           dropoff_lng: ts.end_lng,
-          status: ts.driver_response === 'accepted' ? 'accepted' : (ts.driver_response === 'declined' ? 'rejected' : 'pending'),
+          status: computedStatus,
           fare: ts.distance_km ? Math.round(ts.distance_km * 15) : 100,
           distance: ts.distance_km ? Math.round(ts.distance_km * 10) / 10 : null,
           created_at: ts.created_at || new Date().toISOString(),

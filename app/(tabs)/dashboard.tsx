@@ -1,10 +1,10 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { session, tripsAPI, activeSession } from '@/services/api';
+import { activeSession, session, tripsAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ActivityIndicator, Alert, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from 'react-native';
 
 export default function Dashboard() {
@@ -20,6 +20,7 @@ export default function Dashboard() {
 
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectTripId, setRejectTripId] = useState<string | number | null>(null);
+  const [rejectTripLeg, setRejectTripLeg] = useState<'outbound' | 'return'>('outbound');
   const [rejectReason, setRejectReason] = useState('');
 
   const theme = useColorScheme();
@@ -76,8 +77,8 @@ export default function Dashboard() {
         // Find current/active trip
         const now = new Date();
         const current = trips.find((t: any) => {
-          if (t.driver_response !== 'accepted' || t.status === 'completed' || !t.is_active) return false;
-          if (!t.start_date || !t.one_way_start_time) return false;
+          if (t.status === 'completed' || !t.is_active) return false;
+          if (!t.start_date) return false;
 
           const startDate = new Date(t.start_date);
           const endDate = t.end_date ? new Date(t.end_date) : new Date(t.start_date);
@@ -90,12 +91,29 @@ export default function Dashboard() {
           tripEndDay.setHours(0, 0, 0, 0);
 
           if (today >= tripStartDay && today <= tripEndDay) {
-            const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
-            const tripTodayTime = new Date(now);
-            tripTodayTime.setHours(hour, minute, second || 0, 0);
+            // Check outbound leg
+            if (t.driver_response === 'accepted' && t.one_way_start_time) {
+              const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
+              const tripTodayTime = new Date(now);
+              tripTodayTime.setHours(hour, minute, second || 0, 0);
 
-            const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
-            return diffMinutes >= -30 && diffMinutes <= 120; // Within 2 hours window
+              const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
+              if (diffMinutes >= -30 && diffMinutes <= 120) {
+                return true;
+              }
+            }
+
+            // Check return leg
+            if (t.driver_response_two_way === 'accepted' && t.two_way_start_time) {
+              const [hour, minute, second] = t.two_way_start_time.split(':').map(Number);
+              const tripTodayTime = new Date(now);
+              tripTodayTime.setHours(hour, minute, second || 0, 0);
+
+              const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
+              if (diffMinutes >= -30 && diffMinutes <= 120) {
+                return true;
+              }
+            }
           }
           return false;
         });
@@ -107,9 +125,8 @@ export default function Dashboard() {
         setCurrentTrip(current);
 
         const urgent = trips.find((t: any) => {
-          const isPending = !t.driver_response || t.driver_response === 'pending';
-          if (!isPending || t.status === 'completed' || t.is_active === false) return false;
-          if (!t.start_date || !t.one_way_start_time) return false;
+          if (t.status === 'completed' || !t.is_active) return false;
+          if (!t.start_date) return false;
 
           const startDate = new Date(t.start_date);
           const endDate = t.end_date ? new Date(t.end_date) : new Date(t.start_date);
@@ -122,12 +139,35 @@ export default function Dashboard() {
           tripEndDay.setHours(0, 0, 0, 0);
 
           if (today >= tripStartDay && today <= tripEndDay) {
-            const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
-            const tripTodayTime = new Date(now);
-            tripTodayTime.setHours(hour, minute, second || 0, 0);
+            // Check outbound leg
+            const isOutboundPending = !t.driver_response || t.driver_response === 'pending';
+            if (isOutboundPending && t.one_way_start_time) {
+              const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
+              const tripTodayTime = new Date(now);
+              tripTodayTime.setHours(hour, minute, second || 0, 0);
 
-            const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
-            return diffMinutes >= 0 && diffMinutes <= 5;
+              const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
+              console.log(`[Urgent Check] Outbound leg for trip ${t.id}: time=${t.one_way_start_time}, diff=${diffMinutes} mins, pending=${isOutboundPending}`);
+              if (diffMinutes >= 0 && diffMinutes <= 5) {
+                t.urgentLeg = 'outbound';
+                return true;
+              }
+            }
+
+            // Check return leg
+            const isReturnPending = !t.driver_response_two_way || t.driver_response_two_way === 'pending';
+            if (isReturnPending && t.two_way_start_time) {
+              const [hour, minute, second] = t.two_way_start_time.split(':').map(Number);
+              const tripTodayTime = new Date(now);
+              tripTodayTime.setHours(hour, minute, second || 0, 0);
+
+              const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
+              console.log(`[Urgent Check] Return leg for trip ${t.id}: time=${t.two_way_start_time}, diff=${diffMinutes} mins, pending=${isReturnPending}`);
+              if (diffMinutes >= 0 && diffMinutes <= 5) {
+                t.urgentLeg = 'return';
+                return true;
+              }
+            }
           }
           return false;
         });
@@ -165,8 +205,6 @@ export default function Dashboard() {
         const now = new Date();
 
         const startingNow = trips.find((t: any) => {
-          // Skip if this trip was already dismissed
-          if (dismissedStartTrips.current.has(String(t.id))) return false;
           if (t.status === 'completed' || !t.is_active) return false;
           if (!t.start_date) return false;
 
@@ -182,25 +220,27 @@ export default function Dashboard() {
 
           if (today >= tripStartDay && today <= tripEndDay) {
             // Check one_way_start_time
-            if (t.one_way_start_time) {
+            if (t.one_way_start_time && t.one_way_is_active !== false) {
               const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
               const tripTodayTime = new Date(now);
               tripTodayTime.setHours(hour, minute, second || 0, 0);
               const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
-              // If trip is between 15 mins before and 120 mins after
-              if (diffMinutes >= 0 && diffMinutes <= 2) {
-                return !dismissedStartTrips.current.has(String(t.id));
+              // Show popup from 5 mins before start up to 30 mins after
+              if (diffMinutes >= -30 && diffMinutes <= 5) {
+                return !dismissedStartTrips.current.has(`${t.id}-outbound`);
               }
             }
 
             // Check two_way_start_time if exists
-            if (t.two_way_start_time) {
+            if (t.two_way_start_time && t.two_way_is_active !== false) {
               const [hour, minute, second] = t.two_way_start_time.split(':').map(Number);
               const tripTodayTime = new Date(now);
               tripTodayTime.setHours(hour, minute, second || 0, 0);
               const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
               console.log(`Trip ${t.id} two_way - diffMinutes: ${diffMinutes}`);
-              if (diffMinutes >= 0 && diffMinutes <= 2) return true;
+              if (diffMinutes >= -30 && diffMinutes <= 5) {
+                return !dismissedStartTrips.current.has(`${t.id}-return`);
+              }
             }
           }
           return false;
@@ -227,8 +267,9 @@ export default function Dashboard() {
     }
   }, [tripToStartNow, urgentTrip]);
 
-  const promptReject = (tripId: string | number) => {
+  const promptReject = (tripId: string | number, leg?: 'outbound' | 'return') => {
     setRejectTripId(tripId);
+    setRejectTripLeg(leg || 'outbound');
     setRejectReason('');
     setRejectModalVisible(true);
   };
@@ -243,7 +284,11 @@ export default function Dashboard() {
     setRejectModalVisible(false);
 
     try {
-      await tripsAPI.rejectTrip(rejectTripId, driverId, rejectReason);
+      if (rejectTripLeg === 'return') {
+        await tripsAPI.rejectReturnTrip(rejectTripId, driverId, rejectReason);
+      } else {
+        await tripsAPI.rejectTrip(rejectTripId, driverId, rejectReason);
+      }
       Alert.alert('Declined', 'Trip Declined.');
       setUrgentTrip(null);
       Vibration.cancel();
@@ -256,12 +301,16 @@ export default function Dashboard() {
     if (!urgentTrip) return;
     try {
       if (action === 'accept') {
-        await tripsAPI.acceptTrip(urgentTrip.id, driverId);
+        if (urgentTrip.urgentLeg === 'return') {
+          await tripsAPI.acceptReturnTrip(urgentTrip.id, driverId);
+        } else {
+          await tripsAPI.acceptTrip(urgentTrip.id, driverId);
+        }
         Alert.alert('Success', 'Trip Accepted!');
         setUrgentTrip(null);
         Vibration.cancel();
       } else {
-        promptReject(urgentTrip.id);
+        promptReject(urgentTrip.id, urgentTrip.urgentLeg);
       }
     } catch (e) {
       Alert.alert('Error', 'Failed to update trip status.');
@@ -297,7 +346,7 @@ export default function Dashboard() {
 
       // Call location API to create location record
       const locationResponse = await tripsAPI.startLocationTracking(locationData);
-      
+
       if (locationResponse && locationResponse.location_id) {
         activeSession.location_id = locationResponse.location_id;
         try {
@@ -313,9 +362,14 @@ export default function Dashboard() {
       } catch (acceptErr) {
         console.warn("acceptTrip failed, it might already be accepted.", acceptErr);
       }
-      
+
       Alert.alert('Success', 'Trip Started!');
-      dismissedStartTrips.current.add(String(tripId));
+      if (tripToStartNow) {
+        const leg = tripToStartNow.one_way_is_active !== false ? 'outbound' : 'return';
+        dismissedStartTrips.current.add(`${tripId}-${leg}`);
+      } else {
+        dismissedStartTrips.current.add(String(tripId));
+      }
       setTripToStartNow(null);
     } catch (e: any) {
       console.error("Start Trip Error: ", e);
@@ -402,7 +456,8 @@ export default function Dashboard() {
                   style={[styles.modalButton, styles.modalCancelButton, { borderColor: colors.border }]}
                   onPress={() => {
                     if (tripToStartNow) {
-                      dismissedStartTrips.current.add(String(tripToStartNow.id));
+                      const leg = tripToStartNow.one_way_is_active !== false ? 'outbound' : 'return';
+                      dismissedStartTrips.current.add(`${tripToStartNow.id}-${leg}`);
                     }
                     setTripToStartNow(null);
                   }}

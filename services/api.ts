@@ -70,6 +70,10 @@ export const tripsAPI = {
     const response = await api.get('/trips', { params });
     return response.data;
   },
+  getTripHistory: async (agencyId: string, driverId: string) => {
+    const response = await api.get(`/trips/history/agency/${agencyId}/driver/${driverId}`);
+    return response.data;
+  },
   createTrip: async (data: any) => {
     const response = await api.post('/trips', data);
     return response.data;
@@ -84,6 +88,19 @@ export const tripsAPI = {
     const response = await api.put(`/trips/${tripId}/driver-response`, {
       driver_response: 'declined',
       driver_reason: reason || 'Rejected by driver'
+    });
+    return response.data;
+  },
+  acceptReturnTrip: async (tripId: string | number, driverId: string | number) => {
+    const response = await api.put(`/trips/${tripId}/driver-response-return`, {
+      driver_response_two_way: 'accepted'
+    });
+    return response.data;
+  },
+  rejectReturnTrip: async (tripId: string | number, driverId: string | number, reason?: string) => {
+    const response = await api.put(`/trips/${tripId}/driver-response-return`, {
+      driver_response_two_way: 'declined',
+      driver_reason_two_way: reason || 'Rejected by driver'
     });
     return response.data;
   },
@@ -127,19 +144,6 @@ export const tripsAPI = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
-    });
-    return response.data;
-  },
-  acceptReturnTrip: async (tripId: string | number) => {
-    const response = await api.put(`/trips/${tripId}/driver-response-return`, {
-      driver_response_two_way: 'accepted'
-    });
-    return response.data;
-  },
-  rejectReturnTrip: async (tripId: string | number, reason?: string) => {
-    const response = await api.put(`/trips/${tripId}/driver-response-return`, {
-      driver_response_two_way: 'declined',
-      driver_reason_two_way: reason || 'Rejected by driver'
     });
     return response.data;
   },

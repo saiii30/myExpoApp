@@ -130,6 +130,13 @@ export default function TripsScreen() {
     try {
       setLoading(true);
       const data = await tripsAPI.getTrips(undefined, driverId, agencyId);
+      
+      let historyData: any[] = [];
+      try {
+        historyData = await tripsAPI.getTripHistory(agencyId, driverId);
+      } catch (e) {
+        console.warn("Failed to load trip history", e);
+      }
 
       // Fetch active locations to see which trips are actually started right now
       let activeLocationTripIds = new Set<string>();
@@ -292,8 +299,58 @@ export default function TripsScreen() {
         }
       });
 
+      // Format history trips
+      const historyFormattedTrips: Trip[] = [];
+      historyData.forEach((h: any) => {
+        const ts = h.trip_schedule;
+        if (!ts) return;
+        
+        let passengerName = ts.company_name ? `Company: ${ts.company_name}` : 'No passengers';
+        let passengerPhone = 'N/A';
+        if (ts.route_point) {
+          try {
+            const points = typeof ts.route_point === 'string' ? JSON.parse(ts.route_point) : ts.route_point;
+            if (Array.isArray(points) && points.length > 0) {
+              const names = points.map((p: any) => p.passenger_name).filter(Boolean);
+              const phones = points.map((p: any) => p.passenger_phone).filter(Boolean);
+              if (names.length > 0) passengerName = names.join(', ');
+              if (phones.length > 0) passengerPhone = phones.join(', ');
+            }
+          } catch (e) {}
+        }
+        
+        const historyTrip: Trip = {
+          id: h.id, // unique history ID
+          original_id: ts.id,
+          is_started: false,
+          passenger_name: passengerName,
+          passenger_phone: passengerPhone,
+          pickup_location: h.leg === 'return' ? (ts.end_point || 'Unknown Start') : (ts.starting_point || 'Unknown Start'),
+          pickup_lat: h.leg === 'return' ? ts.end_lat : ts.starting_lat,
+          pickup_lng: h.leg === 'return' ? ts.end_lng : ts.starting_lng,
+          dropoff_location: h.leg === 'return' ? (ts.starting_point || 'Unknown End') : (ts.end_point || 'Unknown End'),
+          dropoff_lat: h.leg === 'return' ? ts.starting_lat : ts.end_lat,
+          dropoff_lng: h.leg === 'return' ? ts.starting_lng : ts.end_lng,
+          fare: ts.distance_km ? Math.round(ts.distance_km * 15) : 100,
+          distance: ts.distance_km ? Math.round(ts.distance_km * 10) / 10 : null,
+          created_at: h.created_at || new Date().toISOString(),
+          source: 'history',
+          start_date: h.execution_date,
+          end_date: h.execution_date,
+          status: h.action, // 'completed' or 'rejected'
+          is_active: false,
+          start_time: (h.execution_date && (h.leg === 'return' ? ts.two_way_start_time : ts.one_way_start_time)) 
+                        ? `${h.execution_date}T${h.leg === 'return' ? ts.two_way_start_time : ts.one_way_start_time}` 
+                        : undefined,
+          leg: h.leg,
+        };
+        historyFormattedTrips.push(historyTrip);
+      });
+      
+      const allTrips = [...formattedDbTrips, ...historyFormattedTrips];
+
       // Filter trips for tabs based on leg properties
-      const filteredTrips = formattedDbTrips.filter((t: any) => {
+      const filteredTrips = allTrips.filter((t: any) => {
 
         let isActive = true;
 
@@ -317,9 +374,6 @@ export default function TripsScreen() {
         }
 
         // --- FUTURE DATE OVERRIDE ---
-        // If this is a recurring trip and we are viewing a strictly future date in the upcoming tab,
-        // it hasn't happened yet! Even if the DB says 'false' (because today's run is done), 
-        // tomorrow's run should be treated as active and pending.
         if (activeTab === 'upcoming' && t.end_date && t.status !== 'rejected') {
           const selected = new Date(selectedDate);
           selected.setHours(0, 0, 0, 0);
@@ -329,7 +383,6 @@ export default function TripsScreen() {
             const endDateObj = new Date(endYear, endMonth - 1, endDay);
             endDateObj.setHours(0, 0, 0, 0);
 
-            // If the future date falls within the trip's schedule, it's active for that day
             if (endDateObj.getTime() >= selected.getTime()) {
               isActive = true;
             }
@@ -337,14 +390,36 @@ export default function TripsScreen() {
         }
 
         if (activeTab === 'rejected') {
+          if (t.source === 'history') return t.status === 'rejected';
+          
+          // Fallback for old trips without history records
+          const hasHistory = historyFormattedTrips.some(h => h.original_id === t.original_id && h.status === 'rejected');
+          if (hasHistory) return false;
           return t.status === 'rejected';
         }
 
         if (activeTab === 'completed') {
+          if (t.source === 'history') return t.status === 'completed';
+          
+          // Fallback for old trips without history records
+          const hasHistory = historyFormattedTrips.some(h => h.original_id === t.original_id && h.status === 'completed');
+          if (hasHistory) return false;
           return !isActive && t.status !== 'rejected';
         }
 
         if (activeTab === 'current') {
+          if (t.source === 'history') return false; // History doesn't show in current tab
+          
+          // If there is ANY history for TODAY for this trip, hide it from the current tab!
+          const hasHistoryForToday = historyFormattedTrips.some(h => {
+            if (!h.start_date) return false;
+            const [hYear, hMonth, hDay] = h.start_date.split('-').map(Number);
+            const hDate = new Date(hYear, hMonth - 1, hDay);
+            hDate.setHours(0, 0, 0, 0);
+            return h.original_id === t.original_id && (h.leg === t.leg || !h.leg) && hDate.getTime() === today.getTime();
+          });
+          if (hasHistoryForToday) return false;
+
           // For current tab only, hide completed trips
           if (!isActive) return false;
 
@@ -366,7 +441,31 @@ export default function TripsScreen() {
         }
 
         if (activeTab === 'upcoming') {
-          // Show trips for selected date
+          const selected = new Date(selectedDate);
+          selected.setHours(0, 0, 0, 0);
+
+          // Always show history trips for the selected date (past, today, or future)
+          if (t.source === 'history') {
+            if (t.start_date) {
+              const [hYear, hMonth, hDay] = t.start_date.split('-').map(Number);
+              const hDate = new Date(hYear, hMonth - 1, hDay);
+              hDate.setHours(0, 0, 0, 0);
+              // Only match if legs match or history leg is null
+              return hDate.getTime() === selected.getTime();
+            }
+            return false;
+          }
+          
+          // For active trips, if we already have a history record for this exact date, hide it!
+          const hasHistoryForDate = historyFormattedTrips.some(h => {
+            if (!h.start_date) return false;
+            const [hYear, hMonth, hDay] = h.start_date.split('-').map(Number);
+            const hDate = new Date(hYear, hMonth - 1, hDay);
+            hDate.setHours(0, 0, 0, 0);
+            return h.original_id === t.original_id && (h.leg === t.leg || !h.leg) && hDate.getTime() === selected.getTime();
+          });
+          if (hasHistoryForDate) return false;
+
           if (t.start_date) {
             const [startYear, startMonth, startDay] = t.start_date.split('-').map(Number);
             const startDate = new Date(startYear, startMonth - 1, startDay);
@@ -378,10 +477,6 @@ export default function TripsScreen() {
               endDate = new Date(endYear, endMonth - 1, endDay);
               endDate.setHours(0, 0, 0, 0);
             }
-
-            const selected = new Date(selectedDate);
-            selected.setHours(0, 0, 0, 0);
-
             return selected.getTime() >= startDate.getTime() && selected.getTime() <= endDate.getTime();
           }
           return false;
@@ -580,13 +675,21 @@ export default function TripsScreen() {
       if (selected.getTime() > today.getTime()) {
         displayStatus = 'pending';
       } else if (selected.getTime() === today.getTime()) {
-        if (item.status === 'rejected') {
+        if (item.source === 'history') {
+          displayStatus = item.status;
+        } else if (item.status === 'rejected') {
           displayStatus = 'rejected';
         } else if (item.is_active === false) {
           displayStatus = 'completed';
         }
       } else if (selected.getTime() < today.getTime()) {
-        displayStatus = 'completed';
+        if (item.source === 'history') {
+          displayStatus = item.status;
+        } else if (item.status === 'rejected') {
+          displayStatus = 'rejected';
+        } else {
+          displayStatus = 'completed';
+        }
       }
     } else if (item.is_active === false && item.status !== 'rejected') {
       displayStatus = 'completed';
