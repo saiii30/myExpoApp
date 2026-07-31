@@ -389,7 +389,29 @@ export default function TripsScreen() {
           }
         }
 
+        // Helper function to check if a trip matches the selected date
+        const isDateMatching = (trip: any) => {
+          if (!trip.start_date) return false;
+          const selected = new Date(selectedDate);
+          selected.setHours(0, 0, 0, 0);
+          
+          const [sYear, sMonth, sDay] = trip.start_date.split('-').map(Number);
+          const sDate = new Date(sYear, sMonth - 1, sDay);
+          sDate.setHours(0, 0, 0, 0);
+          
+          let eDate = sDate;
+          if (trip.end_date) {
+            const [eYear, eMonth, eDay] = trip.end_date.split('-').map(Number);
+            eDate = new Date(eYear, eMonth - 1, eDay);
+            eDate.setHours(0, 0, 0, 0);
+          }
+          
+          return selected.getTime() >= sDate.getTime() && selected.getTime() <= eDate.getTime();
+        };
+
         if (activeTab === 'rejected') {
+          if (!isDateMatching(t)) return false;
+          
           if (t.source === 'history') return t.status === 'rejected';
           
           // Fallback for old trips without history records
@@ -399,6 +421,8 @@ export default function TripsScreen() {
         }
 
         if (activeTab === 'completed') {
+          if (!isDateMatching(t)) return false;
+          
           if (t.source === 'history') return t.status === 'completed';
           
           // Fallback for old trips without history records
@@ -845,7 +869,7 @@ export default function TripsScreen() {
         </TouchableOpacity>
       </View>
 
-      {activeTab === 'upcoming' && (
+      {(activeTab === 'upcoming' || activeTab === 'completed' || activeTab === 'rejected') && (
         <TouchableOpacity
           style={[styles.datePickerButton, { backgroundColor: colors.card, borderColor: colors.border }]}
           onPress={() => setShowDatePicker(true)}
