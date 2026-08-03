@@ -826,7 +826,8 @@ export default function TripsScreen() {
               pathname: '/screens/live-map',
               params: {
                 tripId: item.original_id ? item.original_id.toString() : item.id.toString(),
-                leg: item.leg || 'outbound'
+                leg: item.leg || 'outbound',
+                status: item.status
               }
             })}
           >

@@ -1,4 +1,4 @@
-import { session, tripsAPI, activeSession } from '@/services/api';
+import { session, tripsAPI, activeSession, api } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router, useLocalSearchParams, Stack } from 'expo-router';
 import React, { useEffect, useState, useRef } from 'react';
@@ -12,7 +12,7 @@ const CARD_WIDTH = width * 0.8;
 const CARD_MARGIN = 12;
 
 export default function LiveMapScreen() {
-  const { tripId, leg } = useLocalSearchParams();
+  const { tripId, leg, status: paramStatus } = useLocalSearchParams();
   const [trip, setTrip] = useState<any>(null);
   const [passengers, setPassengers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,6 +21,8 @@ export default function LiveMapScreen() {
   const [focusedPassenger, setFocusedPassenger] = useState<any>(null);
   const [showPassengerModal, setShowPassengerModal] = useState(false);
   const [selectedPassenger, setSelectedPassenger] = useState<any>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const isSimulatingRef = useRef(false);
   const mapRef = useRef<MapView>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
 
@@ -30,11 +32,12 @@ export default function LiveMapScreen() {
   useEffect(() => {
     loadTripDetails();
     startLocationTracking();
-    
+
     return () => {
       if (locationSubscription.current) {
         locationSubscription.current.remove();
       }
+      isSimulatingRef.current = false;
     };
   }, [tripId, leg]);
 
@@ -68,7 +71,7 @@ export default function LiveMapScreen() {
       },
       (loc) => {
         setDriverLocation(loc);
-        
+
         // Push the updated location to the backend if we have an active location session
         if (activeSession && activeSession.location_id) {
           tripsAPI.updateLocation(activeSession.location_id, {
@@ -83,13 +86,25 @@ export default function LiveMapScreen() {
     );
   };
 
-  const fetchRoute = async (startLat: number, startLng: number, endLat: number, endLng: number) => {
+  const fetchRoute = async (startLat: number, startLng: number, endLat: number, endLng: number, passList: any[] = []) => {
     try {
+      const coords = [`${startLng},${startLat}`];
+
+      // Add all passengers as waypoints so the route actually goes to them
+      passList.forEach(p => {
+        if (p.lat && p.lng) {
+          coords.push(`${p.lng},${p.lat}`);
+        }
+      });
+
+      coords.push(`${endLng},${endLat}`);
+      const coordString = coords.join(';');
+
       const response = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`
+        `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson`
       );
       const data = await response.json();
-      
+
       if (data.routes && data.routes.length > 0) {
         const coordinates = data.routes[0].geometry.coordinates.map((coord: any) => ({
           latitude: coord[1],
@@ -114,10 +129,10 @@ export default function LiveMapScreen() {
     try {
       setLoading(true);
       const trips = await tripsAPI.getTrips(undefined, driverId, agencyId);
-      
+
       const formattedDbTrips = trips.map((ts: any) => {
         let passengerList: any[] = [];
-        
+
         if (ts.route_point) {
           try {
             const points = typeof ts.route_point === 'string' ? JSON.parse(ts.route_point) : ts.route_point;
@@ -132,9 +147,9 @@ export default function LiveMapScreen() {
                 lng: p.lng || p.pickup_lng || ts.starting_lng,
               }));
             }
-          } catch (e) {}
+          } catch (e) { }
         }
-        
+
         if (passengerList.length === 0) {
           if (ts.passengers && Array.isArray(ts.passengers)) {
             passengerList = ts.passengers.map((p: any) => ({
@@ -157,10 +172,10 @@ export default function LiveMapScreen() {
                   lng: p.lng || p.pickup_lng || ts.starting_lng,
                 }));
               }
-            } catch (e) {}
+            } catch (e) { }
           }
         }
-        
+
         return {
           id: ts.id,
           passengers: passengerList,
@@ -190,7 +205,38 @@ export default function LiveMapScreen() {
 
       const allTrips = [...formattedDbTrips, ...mockTrips];
       const tripData = allTrips.find((t: any) => String(t.id) === String(tripId));
-      
+
+      // Use paramStatus if passed, otherwise fallback to tripData.status
+      if (tripData && paramStatus) {
+        tripData.status = paramStatus;
+      }
+
+      if (tripData && tripData.status === 'completed') {
+        try {
+          const locRes = await api.get('/mobile/locations', { params: { trip_id: tripId, driver_id: driverId }});
+          if (locRes.data && locRes.data.length > 0) {
+            // Sort to get the latest
+            const latestLoc = locRes.data.sort((a:any, b:any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+            if (latestLoc.route_point) {
+              const parsed = typeof latestLoc.route_point === 'string' ? JSON.parse(latestLoc.route_point) : latestLoc.route_point;
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                // Safely update passenger list with final status
+                tripData.passengers = (tripData.passengers || []).map((p: any) => {
+                  const pId = String(p.id || p.passenger_id);
+                  const match = parsed.find((mp: any) => String(mp.passenger_id || mp.id) === pId || mp.passenger_name === p.name);
+                  if (match) {
+                     return { ...p, ispresent: match.ispresent, pickup: match.pickup, dropoff: match.dropoff };
+                  }
+                  return p;
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to fetch completed location data", e);
+        }
+      }
+
       if (tripData && leg === 'return') {
         setTrip({
           ...tripData,
@@ -203,13 +249,23 @@ export default function LiveMapScreen() {
         });
         setPassengers(tripData.passengers || []);
         if (tripData.dropoff_lat && tripData.dropoff_lng && tripData.pickup_lat && tripData.pickup_lng) {
-          fetchRoute(tripData.dropoff_lat, tripData.dropoff_lng, tripData.pickup_lat, tripData.pickup_lng);
+          fetchRoute(tripData.dropoff_lat, tripData.dropoff_lng, tripData.pickup_lat, tripData.pickup_lng, tripData.passengers || []);
+          // Make sure car marker is visible immediately
+          setDriverLocation(prev => prev || {
+            coords: { latitude: tripData.dropoff_lat, longitude: tripData.dropoff_lng, altitude: null, accuracy: 5, altitudeAccuracy: null, heading: null, speed: 0 },
+            timestamp: Date.now()
+          });
         }
       } else if (tripData) {
         setTrip(tripData);
         setPassengers(tripData.passengers || []);
         if (tripData.pickup_lat && tripData.pickup_lng && tripData.dropoff_lat && tripData.dropoff_lng) {
-          fetchRoute(tripData.pickup_lat, tripData.pickup_lng, tripData.dropoff_lat, tripData.dropoff_lng);
+          fetchRoute(tripData.pickup_lat, tripData.pickup_lng, tripData.dropoff_lat, tripData.dropoff_lng, tripData.passengers || []);
+          // Make sure car marker is visible immediately
+          setDriverLocation(prev => prev || {
+            coords: { latitude: tripData.pickup_lat, longitude: tripData.pickup_lng, altitude: null, accuracy: 5, altitudeAccuracy: null, heading: null, speed: 0 },
+            timestamp: Date.now()
+          });
         }
       }
     } catch (error: any) {
@@ -247,6 +303,115 @@ export default function LiveMapScreen() {
     }
   };
 
+  const toggleSimulation = async () => {
+    if (isSimulating) {
+      isSimulatingRef.current = false;
+      setIsSimulating(false);
+    } else {
+      if (routeCoordinates.length === 0) {
+        Alert.alert("No Route", "Please wait for the route to load before simulating.");
+        return;
+      }
+
+      if (!activeSession || !activeSession.location_id) {
+        try {
+          // Attempt to find the existing active location ID from the backend
+          const allLocsRes = await api.get('/mobile/locations/all');
+          const activeLoc = allLocsRes.data.find(
+            (loc: any) => String(loc.trip_id) === String(tripId) && loc.is_active === true && String(loc.driver_id) === String(driverId)
+          );
+
+          if (activeLoc && activeLoc.id) {
+            console.log("Restored location_id from backend:", activeLoc.id);
+            if (!activeSession) {
+              Object.assign(activeSession, { location_id: activeLoc.id });
+            } else {
+              activeSession.location_id = activeLoc.id;
+            }
+          } else {
+            // Location doesn't exist, they actually need to start the trip
+            Alert.alert(
+              "Location Session Missing",
+              "The car will move on screen, but it won't save to the database because no trip has been 'Started' to create a location record. Go back to Dashboard and click 'Start Trip' first!"
+            );
+            return;
+          }
+        } catch (e) {
+          console.warn("Failed to fetch location_id", e);
+          return;
+        }
+      }
+
+      setIsSimulating(true);
+      isSimulatingRef.current = true;
+      let i = 0;
+      let visitedPassengers = new Set();
+
+      const runSimulation = async () => {
+        while (isSimulatingRef.current && i < routeCoordinates.length) {
+          const coord = routeCoordinates[i];
+
+          // Mock a location object
+          const mockLoc: Location.LocationObject = {
+            coords: {
+              latitude: coord.latitude,
+              longitude: coord.longitude,
+              altitude: null,
+              accuracy: 5,
+              altitudeAccuracy: null,
+              heading: null,
+              speed: 15,
+            },
+            timestamp: Date.now(),
+          };
+
+          setDriverLocation(mockLoc);
+
+          // Manually push to backend since we bypassed the Location.watchPositionAsync callback
+          if (activeSession && activeSession.location_id) {
+            tripsAPI.updateLocation(activeSession.location_id, {
+              driver_id: driverId,
+              latitude: coord.latitude,
+              longitude: coord.longitude,
+              accuracy: 5,
+              speed: 15
+            }).then(res => console.log(`Sim sync success: lat ${coord.latitude}`))
+              .catch(e => console.log('Simulation sync failed', e));
+          } else {
+            console.log("Sim sync skipped: activeSession.location_id is null");
+          }
+
+          // Check if we reached a passenger (~30 meter radius)
+          let isNearPassenger = false;
+          for (const p of passengers) {
+            if (p.id && !visitedPassengers.has(p.id) && p.lat && p.lng && Math.abs(p.lat - coord.latitude) < 0.0003 && Math.abs(p.lng - coord.longitude) < 0.0003) {
+              isNearPassenger = true;
+              visitedPassengers.add(p.id);
+              break;
+            }
+          }
+
+          if (isNearPassenger) {
+            console.log("Arrived at passenger! Waiting 30 seconds...");
+            for (let w = 0; w < 30; w++) {
+              if (!isSimulatingRef.current) break;
+              await new Promise(res => setTimeout(res, 1000));
+            }
+            i += 10; // skip a few points to prevent repeatedly triggering at same spot
+          } else {
+            await new Promise(res => setTimeout(res, 1000));
+            i += 3; // Step size (skip 2 points each second to drive reasonably fast)
+          }
+        }
+
+        setIsSimulating(false);
+        isSimulatingRef.current = false;
+      };
+
+      runSimulation();
+    }
+  };
+
   const savePassengerState = (updatedPassengers: any[]) => {
     const cleanUpdated = updatedPassengers.map(p => ({
       passenger_id: p.passenger_id || p.id,
@@ -260,7 +425,7 @@ export default function LiveMapScreen() {
       ispresent: p.ispresent !== false,
       dropoff: p.dropoff || false
     }));
-    
+
     // Update DriverLocation Table (if location session is active)
     if (activeSession && activeSession.location_id) {
       tripsAPI.updateLocationRoutePoints({
@@ -365,7 +530,7 @@ export default function LiveMapScreen() {
           if (passenger.lat && passenger.lng) {
             let markerColor = "#38bdf8"; // default present
             let markerIcon = "user";
-            
+
             if (passenger.dropoff) {
               markerColor = "#6366f1";
               markerIcon = "user-check";
@@ -397,19 +562,35 @@ export default function LiveMapScreen() {
         })}
       </MapView>
 
+      {/* Header */}
       <View style={styles.headerControls}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <FontAwesome5 name="arrow-left" size={20} color="#f8fafc" />
         </TouchableOpacity>
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.headerTitle}>Live Route</Text>
+          <Text style={styles.headerSubtitle}>{leg === 'return' ? 'Return Leg' : 'Outbound Leg'}</Text>
+        </View>
+
+        {trip?.status !== 'completed' && (
+          <TouchableOpacity
+            style={[styles.simulateButton, { backgroundColor: isSimulating ? '#ef4444' : '#10b981' }]}
+            onPress={toggleSimulation}
+          >
+            <FontAwesome5 name={isSimulating ? "stop" : "play"} size={14} color="#fff" />
+            <Text style={styles.simulateButtonText}>{isSimulating ? "Stop" : "Simulate"}</Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={styles.centerButton} onPress={centerOnAll}>
           <FontAwesome5 name="crosshairs" size={20} color="#f8fafc" />
         </TouchableOpacity>
       </View>
 
       <View style={styles.bottomSheet}>
-        <ScrollView 
-          horizontal 
-          pagingEnabled 
+        <ScrollView
+          horizontal
+          pagingEnabled
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.carouselContainer}
           snapToInterval={CARD_WIDTH + (CARD_MARGIN * 2)}
@@ -417,8 +598,8 @@ export default function LiveMapScreen() {
         >
           {/* "All Passengers" Summary Card */}
           <View style={styles.cardWrapper}>
-            <TouchableOpacity 
-              style={[styles.passengerCard, !focusedPassenger && styles.activeCard]} 
+            <TouchableOpacity
+              style={[styles.passengerCard, !focusedPassenger && styles.activeCard]}
               activeOpacity={0.8}
               onPress={() => handlePassengerSelect(null)}
             >
@@ -443,24 +624,24 @@ export default function LiveMapScreen() {
           {/* Individual Passenger Cards */}
           {passengers.map((passenger, index) => (
             <View key={index} style={styles.cardWrapper}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[
-                  styles.passengerCard, 
+                  styles.passengerCard,
                   (focusedPassenger && (focusedPassenger.id === passenger.id || focusedPassenger.name === passenger.name)) && styles.activeCard
-                ]} 
+                ]}
                 activeOpacity={0.8}
                 onPress={() => handlePassengerSelect(passenger)}
               >
                 <View style={styles.cardHeader}>
-                  <View style={[styles.avatar, { 
-                    backgroundColor: passenger.dropoff ? '#6366f120' : 
-                                     passenger.pickup ? '#10b98120' : 
-                                     passenger.ispresent === false ? '#ef444420' : '#38bdf820'
+                  <View style={[styles.avatar, {
+                    backgroundColor: passenger.dropoff ? '#6366f120' :
+                      passenger.pickup ? '#10b98120' :
+                        passenger.ispresent === false ? '#ef444420' : '#38bdf820'
                   }]}>
-                    <FontAwesome5 
-                      name={passenger.dropoff ? 'user-check' : passenger.pickup ? 'user-check' : passenger.ispresent === false ? 'user-times' : 'user'} 
-                      size={16} 
-                      color={passenger.dropoff ? '#6366f1' : passenger.pickup ? '#10b981' : passenger.ispresent === false ? '#ef4444' : '#38bdf8'} 
+                    <FontAwesome5
+                      name={passenger.dropoff ? 'user-check' : passenger.pickup ? 'user-check' : passenger.ispresent === false ? 'user-times' : 'user'}
+                      size={16}
+                      color={passenger.dropoff ? '#6366f1' : passenger.pickup ? '#10b981' : passenger.ispresent === false ? '#ef4444' : '#38bdf8'}
                     />
                   </View>
                   <View style={styles.passengerInfo}>
@@ -474,15 +655,17 @@ export default function LiveMapScreen() {
                 <View style={styles.cardDetails}>
                   <Text style={styles.locationLabel}>PICKUP POINT</Text>
                   <Text style={styles.locationText} numberOfLines={2}>{passenger.address}</Text>
-                  <TouchableOpacity 
-                    style={styles.updateStatusBtn}
-                    onPress={() => {
-                      setSelectedPassenger(passenger);
-                      setShowPassengerModal(true);
-                    }}
-                  >
-                    <Text style={styles.updateStatusBtnText}>Take Action</Text>
-                  </TouchableOpacity>
+                  {trip?.status !== 'completed' && (
+                    <TouchableOpacity
+                      style={styles.updateStatusBtn}
+                      onPress={() => {
+                        setSelectedPassenger(passenger);
+                        setShowPassengerModal(true);
+                      }}
+                    >
+                      <Text style={styles.updateStatusBtnText}>Take Action</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </TouchableOpacity>
             </View>
@@ -506,7 +689,7 @@ export default function LiveMapScreen() {
                   <FontAwesome5 name="times" size={24} color="#64748b" />
                 </TouchableOpacity>
               </View>
-              
+
               <View style={styles.passengerModalBody}>
                 {leg === 'outbound' ? (
                   <>
@@ -516,7 +699,7 @@ export default function LiveMapScreen() {
                         trackColor={{ false: "#334155", true: "#6366f1" }}
                         thumbColor={selectedPassenger.pickup ? "#ffffff" : "#f1f5f9"}
                         onValueChange={(val) => {
-                          const updated = passengers.map(p => 
+                          const updated = passengers.map(p =>
                             p.id === selectedPassenger.id ? { ...p, pickup: val, ispresent: true } : p
                           );
                           setPassengers(updated);
@@ -526,14 +709,14 @@ export default function LiveMapScreen() {
                         value={selectedPassenger.pickup || false}
                       />
                     </View>
-                    
+
                     <View style={styles.switchRow}>
                       <Text style={styles.switchLabel}>Absent</Text>
                       <Switch
                         trackColor={{ false: "#334155", true: "#ef4444" }}
                         thumbColor={selectedPassenger.ispresent === false ? "#ffffff" : "#f1f5f9"}
                         onValueChange={(val) => {
-                          const updated = passengers.map(p => 
+                          const updated = passengers.map(p =>
                             p.id === selectedPassenger.id ? { ...p, ispresent: !val, pickup: false } : p
                           );
                           setPassengers(updated);
@@ -552,7 +735,7 @@ export default function LiveMapScreen() {
                         trackColor={{ false: "#334155", true: "#10b981" }}
                         thumbColor={selectedPassenger.dropoff ? "#ffffff" : "#f1f5f9"}
                         onValueChange={(val) => {
-                          const updated = passengers.map(p => 
+                          const updated = passengers.map(p =>
                             p.id === selectedPassenger.id ? { ...p, dropoff: val } : p
                           );
                           setPassengers(updated);
@@ -565,7 +748,7 @@ export default function LiveMapScreen() {
                   </>
                 )}
 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.doneBtn}
                   onPress={() => setShowPassengerModal(false)}
                 >
@@ -584,6 +767,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
+  },
+  headerTextContainer: {
+    flex: 1,
+  },
+  simulateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginRight: 10,
+  },
+  simulateButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+    marginLeft: 6,
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#94a3b8',
   },
   loadingContainer: {
     flex: 1,
