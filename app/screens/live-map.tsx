@@ -223,6 +223,22 @@ export default function LiveMapScreen() {
     }
   };
 
+  const savePassengerState = (updatedPassengers: any[]) => {
+    const cleanUpdated = updatedPassengers.map(p => ({
+      passenger_id: p.passenger_id || p.id,
+      passenger_name: p.passenger_name || p.name || 'Unknown',
+      passenger_phone: p.passenger_phone || p.phone || 'N/A',
+      timestamp: p.timestamp || new Date().toISOString(),
+      pickup: p.pickup || false,
+      pickup_point: p.pickup_point || p.address || 'Unknown address',
+      pickup_lat: p.pickup_lat || p.lat,
+      pickup_lng: p.pickup_lng || p.lng,
+      ispresent: p.ispresent !== false,
+      dropoff: p.dropoff || false
+    }));
+    tripsAPI.updateTripRoutePoint(tripId as string, cleanUpdated).catch(e => console.error(e));
+  };
+
   if (loading || !trip) {
     return (
       <View style={styles.loadingContainer}>
@@ -311,6 +327,20 @@ export default function LiveMapScreen() {
             return null; // hide other passengers if one is focused
           }
           if (passenger.lat && passenger.lng) {
+            let markerColor = "#38bdf8"; // default present
+            let markerIcon = "user";
+            
+            if (passenger.dropoff) {
+              markerColor = "#6366f1";
+              markerIcon = "user-check";
+            } else if (passenger.pickup) {
+              markerColor = "#10b981";
+              markerIcon = "user-check";
+            } else if (passenger.ispresent === false) {
+              markerColor = "#ef4444";
+              markerIcon = "user-times";
+            }
+
             return (
               <Marker
                 key={index}
@@ -319,9 +349,9 @@ export default function LiveMapScreen() {
                 description={passenger.address}
                 zIndex={50}
               >
-                <View style={styles.passengerMarkerContainer}>
-                  <View style={styles.passengerMarkerInner}>
-                    <FontAwesome5 name="user" size={14} color="#ffffff" />
+                <View style={[styles.passengerMarkerContainer, { backgroundColor: markerColor + '33' }]}>
+                  <View style={[styles.passengerMarkerInner, { backgroundColor: markerColor }]}>
+                    <FontAwesome5 name={markerIcon} size={14} color="#ffffff" />
                   </View>
                 </View>
               </Marker>
@@ -386,8 +416,16 @@ export default function LiveMapScreen() {
                 onPress={() => handlePassengerSelect(passenger)}
               >
                 <View style={styles.cardHeader}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{passenger.name.charAt(0).toUpperCase()}</Text>
+                  <View style={[styles.avatar, { 
+                    backgroundColor: passenger.dropoff ? '#6366f120' : 
+                                     passenger.pickup ? '#10b98120' : 
+                                     passenger.ispresent === false ? '#ef444420' : '#38bdf820'
+                  }]}>
+                    <FontAwesome5 
+                      name={passenger.dropoff ? 'user-check' : passenger.pickup ? 'user-check' : passenger.ispresent === false ? 'user-times' : 'user'} 
+                      size={16} 
+                      color={passenger.dropoff ? '#6366f1' : passenger.pickup ? '#10b981' : passenger.ispresent === false ? '#ef4444' : '#38bdf8'} 
+                    />
                   </View>
                   <View style={styles.passengerInfo}>
                     <Text style={styles.passengerName} numberOfLines={1}>{passenger.name}</Text>
@@ -440,16 +478,16 @@ export default function LiveMapScreen() {
                       <Text style={styles.switchLabel}>Picked Up</Text>
                       <Switch
                         trackColor={{ false: "#334155", true: "#6366f1" }}
-                        thumbColor={selectedPassenger.pickedUp ? "#ffffff" : "#f1f5f9"}
+                        thumbColor={selectedPassenger.pickup ? "#ffffff" : "#f1f5f9"}
                         onValueChange={(val) => {
                           const updated = passengers.map(p => 
-                            p.id === selectedPassenger.id ? { ...p, pickedUp: val, absent: false } : p
+                            p.id === selectedPassenger.id ? { ...p, pickup: val, ispresent: true } : p
                           );
                           setPassengers(updated);
-                          setSelectedPassenger({ ...selectedPassenger, pickedUp: val, absent: false });
-                          tripsAPI.updateTripRoutePoint(tripId as string, updated).catch(e => console.error(e));
+                          setSelectedPassenger({ ...selectedPassenger, pickup: val, ispresent: true });
+                          savePassengerState(updated);
                         }}
-                        value={selectedPassenger.pickedUp || false}
+                        value={selectedPassenger.pickup || false}
                       />
                     </View>
                     
@@ -457,16 +495,16 @@ export default function LiveMapScreen() {
                       <Text style={styles.switchLabel}>Absent</Text>
                       <Switch
                         trackColor={{ false: "#334155", true: "#ef4444" }}
-                        thumbColor={selectedPassenger.absent ? "#ffffff" : "#f1f5f9"}
+                        thumbColor={selectedPassenger.ispresent === false ? "#ffffff" : "#f1f5f9"}
                         onValueChange={(val) => {
                           const updated = passengers.map(p => 
-                            p.id === selectedPassenger.id ? { ...p, absent: val, pickedUp: false } : p
+                            p.id === selectedPassenger.id ? { ...p, ispresent: !val, pickup: false } : p
                           );
                           setPassengers(updated);
-                          setSelectedPassenger({ ...selectedPassenger, absent: val, pickedUp: false });
-                          tripsAPI.updateTripRoutePoint(tripId as string, updated).catch(e => console.error(e));
+                          setSelectedPassenger({ ...selectedPassenger, ispresent: !val, pickup: false });
+                          savePassengerState(updated);
                         }}
-                        value={selectedPassenger.absent || false}
+                        value={selectedPassenger.ispresent === false}
                       />
                     </View>
                   </>
@@ -476,16 +514,16 @@ export default function LiveMapScreen() {
                       <Text style={styles.switchLabel}>Dropped Off</Text>
                       <Switch
                         trackColor={{ false: "#334155", true: "#10b981" }}
-                        thumbColor={selectedPassenger.droppedOff ? "#ffffff" : "#f1f5f9"}
+                        thumbColor={selectedPassenger.dropoff ? "#ffffff" : "#f1f5f9"}
                         onValueChange={(val) => {
                           const updated = passengers.map(p => 
-                            p.id === selectedPassenger.id ? { ...p, droppedOff: val } : p
+                            p.id === selectedPassenger.id ? { ...p, dropoff: val } : p
                           );
                           setPassengers(updated);
-                          setSelectedPassenger({ ...selectedPassenger, droppedOff: val });
-                          tripsAPI.updateTripRoutePoint(tripId as string, updated).catch(e => console.error(e));
+                          setSelectedPassenger({ ...selectedPassenger, dropoff: val });
+                          savePassengerState(updated);
                         }}
-                        value={selectedPassenger.droppedOff || false}
+                        value={selectedPassenger.dropoff || false}
                       />
                     </View>
                   </>
