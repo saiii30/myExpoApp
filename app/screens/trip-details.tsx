@@ -492,8 +492,13 @@ export default function TripDetailsScreen() {
                       }}
                       title={`${passenger.name} (Passenger ${index + 1})`}
                       description={passenger.address}
-                      pinColor="#6366f1"
-                    />
+                    >
+                      <View style={styles.passengerMarkerContainer}>
+                        <View style={styles.passengerMarkerInner}>
+                          <FontAwesome5 name="user" size={14} color="#ffffff" />
+                        </View>
+                      </View>
+                    </Marker>
                   ) : null
                 ))}
                 
@@ -509,7 +514,7 @@ export default function TripDetailsScreen() {
                 
                 {/* Route Line */}
                 <Polyline
-                  coordinates={[
+                  coordinates={routeCoordinates.length > 0 ? routeCoordinates : [
                     { latitude: trip.pickup_lat, longitude: trip.pickup_lng },
                     { latitude: trip.dropoff_lat, longitude: trip.dropoff_lng },
                   ]}
