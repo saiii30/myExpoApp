@@ -805,18 +805,35 @@ export default function TripsScreen() {
           </>
         )}
 
-        <TouchableOpacity
-          style={[styles.viewMapButton, { borderColor: colors.accent }]}
-          onPress={() => router.push({
-            pathname: '/screens/trip-details',
-            params: {
-              tripId: item.original_id ? item.original_id.toString() : item.id.toString(),
-              leg: item.leg || 'outbound'
-            }
-          })}
-        >
-          <Text style={[styles.viewMapButtonText, { color: colors.accent }]}>View Details & Map</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 12, marginTop: 15 }}>
+          <TouchableOpacity
+            style={styles.secondaryDetailsButton}
+            onPress={() => router.push({
+              pathname: '/screens/trip-details',
+              params: {
+                tripId: item.original_id ? item.original_id.toString() : item.id.toString(),
+                leg: item.leg || 'outbound'
+              }
+            })}
+          >
+            <FontAwesome5 name="list-ul" size={14} color="#e2e8f0" style={{ marginRight: 8 }} />
+            <Text style={styles.secondaryDetailsText}>Details</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.primaryMapButton}
+            onPress={() => router.push({
+              pathname: '/screens/live-map',
+              params: {
+                tripId: item.original_id ? item.original_id.toString() : item.id.toString(),
+                leg: item.leg || 'outbound'
+              }
+            })}
+          >
+            <FontAwesome5 name="map-marker-alt" size={14} color="#ffffff" style={{ marginRight: 8 }} />
+            <Text style={styles.primaryMapText}>Live Map</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -1253,6 +1270,43 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  secondaryDetailsButton: {
+    flex: 1,
+    marginTop: 12,
+    paddingVertical: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  secondaryDetailsText: {
+    color: '#e2e8f0',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  primaryMapButton: {
+    flex: 1,
+    marginTop: 12,
+    paddingVertical: 14,
+    backgroundColor: '#6366f1',
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    shadowColor: '#6366f1',
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  primaryMapText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   viewMapButton: {
     marginTop: 12,
     paddingVertical: 12,
@@ -1260,6 +1314,8 @@ const styles = StyleSheet.create({
     borderColor: '#6366f1',
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   viewMapButtonText: {
     color: '#818cf8',

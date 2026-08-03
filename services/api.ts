@@ -97,6 +97,12 @@ export const tripsAPI = {
     });
     return response.data;
   },
+  updateTripRoutePoint: async (tripId: string | number, routePointData: any[]) => {
+    const response = await api.put(`/trips/driver/${tripId}`, {
+      route_point: routePointData
+    });
+    return response.data;
+  },
   rejectReturnTrip: async (tripId: string | number, driverId: string | number, reason?: string) => {
     const response = await api.put(`/trips/${tripId}/driver-response-return`, {
       driver_response_two_way: 'declined',

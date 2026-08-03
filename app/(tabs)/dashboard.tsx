@@ -401,8 +401,10 @@ export default function Dashboard() {
       if (tripToStartNow) {
         const leg = tripToStartNow.one_way_is_active !== false ? 'outbound' : 'return';
         dismissTripStart(`${tripId}-${leg}`);
+        router.push(`/screens/live-map?tripId=${tripId}&leg=${leg}`);
       } else {
         dismissTripStart(String(tripId));
+        router.push(`/screens/live-map?tripId=${tripId}&leg=outbound`);
       }
       setTripToStartNow(null);
     } catch (e: any) {
