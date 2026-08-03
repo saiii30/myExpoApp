@@ -93,6 +93,7 @@ export default function TripsScreen() {
       const now = new Date();
       const upcomingTrip = trips.find((t: Trip) => {
         if (t.status === 'completed' || !t.start_time) return false;
+        if (t.is_started) return false;
 
         // We use the start_date and end_date to see if today is valid
         if (!t.start_date) return false;

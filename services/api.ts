@@ -116,6 +116,12 @@ export const tripsAPI = {
     });
     return response.data;
   },
+  updateTripRoutePoints: async (tripId: string | number, routePoints: any[]) => {
+    const response = await api.put(`/trips/${tripId}`, {
+      route_point: routePoints
+    });
+    return response.data;
+  },
   startLocationTracking: async (data: {
     driver_id: string | number;
     trip_id: string | number;

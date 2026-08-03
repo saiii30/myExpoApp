@@ -2,8 +2,12 @@ import { session, tripsAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, Switch, LayoutAnimation, Platform, UIManager } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function TripDetailsScreen() {
   const { tripId, leg } = useLocalSearchParams();
@@ -13,6 +17,16 @@ export default function TripDetailsScreen() {
   const [showMapModal, setShowMapModal] = useState(false);
   const [routeCoordinates, setRouteCoordinates] = useState<any[]>([]);
 
+  // Expand/Collapse States
+  const [isPassengerExpanded, setIsPassengerExpanded] = useState(true);
+  const [isRouteInfoExpanded, setIsRouteInfoExpanded] = useState(true);
+  const [isMapExpanded, setIsMapExpanded] = useState(true);
+  const [isTripDetailsExpanded, setIsTripDetailsExpanded] = useState(true);
+
+  const toggleSection = (setter: any, value: boolean) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setter(value);
+  };
   const driverId = session.user?.id || 'cf6912d9-6617-482b-aacf-dd034c780185';
   const agencyId = session.user?.agency_id || '6e7cdb44-603c-46c4-a4ca-198334c34314';
 
@@ -78,11 +92,16 @@ export default function TripDetailsScreen() {
               
               // Parse individual passenger details
               passengerList = points.map((p: any) => ({
+                ...p, // Retain raw object
+                id: p.passenger_id || p.id || Math.random().toString(), // fallback id
                 name: p.passenger_name || 'Unknown',
                 phone: p.passenger_phone || 'N/A',
                 address: p.address || p.pickup_address || ts.starting_point || 'Unknown address',
                 lat: p.lat || p.pickup_lat || ts.starting_lat,
                 lng: p.lng || p.pickup_lng || ts.starting_lng,
+                pickup: p.pickup || false,
+                dropoff: p.dropoff || false,
+                ispresent: p.ispresent || false,
               }));
             }
           } catch (e) {
@@ -279,6 +298,8 @@ export default function TripDetailsScreen() {
     }
   };
 
+
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -330,138 +351,213 @@ export default function TripDetailsScreen() {
           </View>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Passenger Details</Text>
-        
-        {passengers.length > 0 ? (
-          <View style={styles.passengersContainer}>
-            {passengers.map((passenger, index) => (
-              <View key={index} style={styles.passengerRow}>
-                <View style={styles.passengerAvatar}>
-                  <Text style={styles.passengerAvatarText}>{passenger.name.charAt(0).toUpperCase()}</Text>
-                </View>
-                <View style={styles.newPassengerInfo}>
-                  <Text style={styles.newPassengerName}>{passenger.name}</Text>
-                  <View style={styles.passengerContact}>
-                    <FontAwesome5 name="phone" size={12} color="#6366f1" />
-                    <Text style={styles.newPassengerPhone}>{passenger.phone}</Text>
-                  </View>
-                  <View style={styles.passengerLocation}>
-                    <FontAwesome5 name="map-marker-alt" size={12} color="#10b981" />
-                    <Text style={styles.newPassengerAddress}>{passenger.address}</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
+      <View style={styles.card}>
+        <TouchableOpacity 
+          style={styles.sectionHeader} 
+          onPress={() => toggleSection(setIsPassengerExpanded, !isPassengerExpanded)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.sectionHeaderLeft}>
+            <View style={[styles.sectionIconContainer, { backgroundColor: 'rgba(99, 102, 241, 0.15)' }]}>
+              <FontAwesome5 name="users" size={14} color="#6366f1" />
+            </View>
+            <Text style={styles.sectionTitle}>Passenger Details</Text>
           </View>
-        ) : (
-          <View style={styles.noPassengers}>
-            <FontAwesome5 name="users" size={32} color="#64748b" />
-            <Text style={styles.noPassengersText}>No individual passenger details available</Text>
+          <View style={styles.chevronContainer}>
+            <FontAwesome5 name={isPassengerExpanded ? "chevron-up" : "chevron-down"} size={14} color="#94a3b8" />
+          </View>
+        </TouchableOpacity>
+        
+        {isPassengerExpanded && (
+          <View style={styles.sectionContent}>
+            {passengers.length > 0 ? (
+              <View style={styles.passengersContainer}>
+                {passengers.map((passenger, index) => (
+                  <View key={index} style={styles.passengerRow}>
+                    <View style={styles.passengerAvatar}>
+                      <Text style={styles.passengerAvatarText}>{passenger.name.charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <View style={styles.newPassengerInfo}>
+                      <Text style={styles.newPassengerName}>{passenger.name}</Text>
+                      <View style={styles.passengerContact}>
+                        <FontAwesome5 name="phone" size={12} color="#6366f1" />
+                        <Text style={styles.newPassengerPhone}>{passenger.phone}</Text>
+                      </View>
+                      <View style={styles.passengerLocation}>
+                        <FontAwesome5 name="map-marker-alt" size={12} color="#10b981" />
+                        <Text style={styles.newPassengerAddress}>{passenger.address}</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.noPassengers}>
+                <FontAwesome5 name="users" size={32} color="#64748b" />
+                <Text style={styles.noPassengersText}>No individual passenger details available</Text>
+              </View>
+            )}
           </View>
         )}
       </View>
 
       <View style={styles.card}>
-        <TouchableOpacity onPress={() => setShowMapModal(true)}>
-          <Text style={styles.sectionTitle}>Route Information</Text>
+        <TouchableOpacity 
+          style={styles.sectionHeader} 
+          onPress={() => toggleSection(setIsRouteInfoExpanded, !isRouteInfoExpanded)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.sectionHeaderLeft}>
+            <View style={[styles.sectionIconContainer, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+              <FontAwesome5 name="route" size={14} color="#10b981" />
+            </View>
+            <Text style={styles.sectionTitle}>Route Information</Text>
+          </View>
+          <View style={styles.chevronContainer}>
+            <FontAwesome5 name={isRouteInfoExpanded ? "chevron-up" : "chevron-down"} size={14} color="#94a3b8" />
+          </View>
         </TouchableOpacity>
 
-        <View style={styles.timelineContainer}>
-          <View style={styles.timelineLeft}>
-            <View style={[styles.timelineDot, { backgroundColor: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }]} />
-            <View style={styles.timelineLine} />
-            <View style={[styles.timelineDot, { backgroundColor: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }]} />
-          </View>
-          <View style={styles.timelineRight}>
-            <View style={styles.locationGroup}>
-              <Text style={styles.locationLabel}>PICKUP LOCATION</Text>
-              <Text style={styles.locationText}>{trip.pickup_location}</Text>
+        {isRouteInfoExpanded && (
+          <View style={styles.sectionContent}>
+            <View style={styles.timelineContainer}>
+              <View style={styles.timelineLeft}>
+                <View style={[styles.timelineDot, { backgroundColor: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }]} />
+                <View style={styles.timelineLine} />
+                <View style={[styles.timelineDot, { backgroundColor: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }]} />
+              </View>
+              <View style={styles.timelineRight}>
+                <View style={styles.locationGroup}>
+                  <Text style={styles.locationLabel}>PICKUP LOCATION</Text>
+                  <Text style={styles.locationText}>{trip.pickup_location}</Text>
+                </View>
+                <View style={{ height: 24 }} />
+                <View style={styles.locationGroup}>
+                  <Text style={styles.locationLabel}>DROPOFF LOCATION</Text>
+                  <Text style={styles.locationText}>{trip.dropoff_location}</Text>
+                </View>
+              </View>
             </View>
-            <View style={{ height: 24 }} />
-            <View style={styles.locationGroup}>
-              <Text style={styles.locationLabel}>DROPOFF LOCATION</Text>
-              <Text style={styles.locationText}>{trip.dropoff_location}</Text>
-            </View>
           </View>
-        </View>
+        )}
       </View>
 
       {trip.pickup_lat && trip.pickup_lng && trip.dropoff_lat && trip.dropoff_lng && (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Route Map</Text>
-          <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: (trip.pickup_lat + trip.dropoff_lat) / 2,
-              longitude: (trip.pickup_lng + trip.dropoff_lng) / 2,
-              latitudeDelta: 0.05,
-              longitudeDelta: 0.05,
-            }}
+          <TouchableOpacity 
+            style={styles.sectionHeader} 
+            onPress={() => toggleSection(setIsMapExpanded, !isMapExpanded)}
+            activeOpacity={0.7}
           >
-            {/* Pickup Location Marker */}
-            <Marker
-              coordinate={{
-                latitude: trip.pickup_lat,
-                longitude: trip.pickup_lng,
-              }}
-              title="Pickup Location"
-              pinColor="#22c55e"
-            />
-            
-            {/* Passenger Pickup Points */}
-            {passengers.length > 0 && passengers.map((passenger, index) => (
-              passenger.lat && passenger.lng ? (
+            <View style={styles.sectionHeaderLeft}>
+              <View style={[styles.sectionIconContainer, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                <FontAwesome5 name="map-marked-alt" size={14} color="#ef4444" />
+              </View>
+              <Text style={styles.sectionTitle}>Route Map</Text>
+            </View>
+            <View style={styles.chevronContainer}>
+              <FontAwesome5 name={isMapExpanded ? "chevron-up" : "chevron-down"} size={14} color="#94a3b8" />
+            </View>
+          </TouchableOpacity>
+          
+          {isMapExpanded && (
+            <View style={[styles.sectionContent, styles.mapSectionContent]}>
+              <MapView
+                style={styles.map}
+                initialRegion={{
+                  latitude: (trip.pickup_lat + trip.dropoff_lat) / 2,
+                  longitude: (trip.pickup_lng + trip.dropoff_lng) / 2,
+                  latitudeDelta: 0.05,
+                  longitudeDelta: 0.05,
+                }}
+              >
+                {/* Pickup Location Marker */}
                 <Marker
-                  key={index}
                   coordinate={{
-                    latitude: passenger.lat,
-                    longitude: passenger.lng,
+                    latitude: trip.pickup_lat,
+                    longitude: trip.pickup_lng,
                   }}
-                  title={`${passenger.name} (Passenger ${index + 1})`}
-                  description={passenger.address}
-                  pinColor="#6366f1"
+                  title="Pickup Location"
+                  pinColor="#22c55e"
                 />
-              ) : null
-            ))}
-            
-            {/* Dropoff Location Marker */}
-            <Marker
-              coordinate={{
-                latitude: trip.dropoff_lat,
-                longitude: trip.dropoff_lng,
-              }}
-              title="Dropoff Location"
-              pinColor="#ef4444"
-            />
-            
-            {/* Route Line */}
-            <Polyline
-              coordinates={[
-                { latitude: trip.pickup_lat, longitude: trip.pickup_lng },
-                { latitude: trip.dropoff_lat, longitude: trip.dropoff_lng },
-              ]}
-              strokeColor="#6366f1"
-              strokeWidth={3}
-            />
-          </MapView>
+                
+                {/* Passenger Pickup Points */}
+                {passengers.length > 0 && passengers.map((passenger, index) => (
+                  passenger.lat && passenger.lng ? (
+                    <Marker
+                      key={index}
+                      coordinate={{
+                        latitude: passenger.lat,
+                        longitude: passenger.lng,
+                      }}
+                      title={`${passenger.name} (Passenger ${index + 1})`}
+                      description={passenger.address}
+                      pinColor="#6366f1"
+                    />
+                  ) : null
+                ))}
+                
+                {/* Dropoff Location Marker */}
+                <Marker
+                  coordinate={{
+                    latitude: trip.dropoff_lat,
+                    longitude: trip.dropoff_lng,
+                  }}
+                  title="Dropoff Location"
+                  pinColor="#ef4444"
+                />
+                
+                {/* Route Line */}
+                <Polyline
+                  coordinates={[
+                    { latitude: trip.pickup_lat, longitude: trip.pickup_lng },
+                    { latitude: trip.dropoff_lat, longitude: trip.dropoff_lng },
+                  ]}
+                  strokeColor="#6366f1"
+                  strokeWidth={3}
+                />
+              </MapView>
+              <TouchableOpacity style={styles.fullScreenMapBtn} onPress={() => setShowMapModal(true)}>
+                <FontAwesome5 name="expand-arrows-alt" size={14} color="#818cf8" />
+                <Text style={styles.fullScreenMapText}>View Full Screen Map</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Trip Details</Text>
+        <TouchableOpacity 
+          style={styles.sectionHeader} 
+          onPress={() => toggleSection(setIsTripDetailsExpanded, !isTripDetailsExpanded)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.sectionHeaderLeft}>
+            <View style={[styles.sectionIconContainer, { backgroundColor: 'rgba(56, 189, 248, 0.15)' }]}>
+              <FontAwesome5 name="info-circle" size={14} color="#38bdf8" />
+            </View>
+            <Text style={styles.sectionTitle}>Trip Details</Text>
+          </View>
+          <View style={styles.chevronContainer}>
+            <FontAwesome5 name={isTripDetailsExpanded ? "chevron-up" : "chevron-down"} size={14} color="#94a3b8" />
+          </View>
+        </TouchableOpacity>
         
-        <View style={styles.detailRow}>
-          <FontAwesome5 name="road" size={18} color="#38bdf8" />
-          <Text style={styles.detailLabel}>Distance:</Text>
-          <Text style={styles.detailValue}>{trip.distance ? `${trip.distance} km` : 'Not specified'}</Text>
-        </View>
+        {isTripDetailsExpanded && (
+          <View style={styles.sectionContent}>
+            <View style={styles.detailRow}>
+              <FontAwesome5 name="road" size={18} color="#38bdf8" />
+              <Text style={styles.detailLabel}>Distance:</Text>
+              <Text style={styles.detailValue}>{trip.distance ? `${trip.distance} km` : 'Not specified'}</Text>
+            </View>
 
-        <View style={styles.detailRow}>
-          <FontAwesome5 name="clock" size={18} color="#38bdf8" />
-          <Text style={styles.detailLabel}>Created:</Text>
-          <Text style={styles.detailValue}>{new Date(trip.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</Text>
-        </View>
+            <View style={styles.detailRow}>
+              <FontAwesome5 name="clock" size={18} color="#38bdf8" />
+              <Text style={styles.detailLabel}>Created:</Text>
+              <Text style={styles.detailValue}>{new Date(trip.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</Text>
+            </View>
+          </View>
+        )}
       </View>
 
       {trip.status === 'pending' && (
@@ -516,25 +612,25 @@ export default function TripDetailsScreen() {
                 />
                 
                 {/* Passenger Pickup Points */}
-                {passengers.length > 0 && passengers.map((passenger, index) => (
-                  passenger.lat && passenger.lng ? (
-                    <Marker
-                      key={index}
-                      coordinate={{
-                        latitude: passenger.lat,
-                        longitude: passenger.lng,
-                      }}
-                      title={`${passenger.name} (Passenger ${index + 1})`}
-                      description={`Phone: ${passenger.phone}\nAddress: ${passenger.address}`}
-                    >
-                      <View style={styles.passengerMarkerContainer}>
-                        <View style={styles.passengerMarkerInner}>
-                          <FontAwesome5 name="user" size={14} color="#ffffff" />
-                        </View>
+              {passengers.length > 0 && passengers.map((passenger, index) => (
+                passenger.lat && passenger.lng ? (
+                  <Marker
+                    key={index}
+                    coordinate={{
+                      latitude: passenger.lat,
+                      longitude: passenger.lng,
+                    }}
+                    title={`${passenger.name} (Passenger ${index + 1})`}
+                    description={`Phone: ${passenger.phone}\nAddress: ${passenger.address}`}
+                  >
+                    <View style={styles.passengerMarkerContainer}>
+                      <View style={styles.passengerMarkerInner}>
+                        <FontAwesome5 name="user" size={14} color="#ffffff" />
                       </View>
-                    </Marker>
-                  ) : null
-                ))}
+                    </View>
+                  </Marker>
+                ) : null
+              ))}
                 
                 {/* Dropoff Location Marker */}
                 <Marker
@@ -562,6 +658,8 @@ export default function TripDetailsScreen() {
         </View>
       </Modal>
     )}
+
+
     </View>
   );
 }
@@ -662,7 +760,59 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     color: '#f8fafc',
-    marginBottom: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sectionIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  chevronContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(51, 65, 85, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionContent: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  mapSectionContent: {
+    padding: 0,
+    marginTop: 16,
+    borderTopWidth: 0,
+  },
+  fullScreenMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    marginTop: 12,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.2)',
+  },
+  fullScreenMapText: {
+    color: '#818cf8',
+    fontWeight: '700',
+    marginLeft: 8,
   },
   timelineContainer: {
     flexDirection: 'row',
@@ -884,9 +1034,9 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#ffffff',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 5,
   },
+
 });

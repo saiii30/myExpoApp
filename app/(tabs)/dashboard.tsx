@@ -1,5 +1,5 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { activeSession, session, tripsAPI } from '@/services/api';
+import { activeSession, session, tripsAPI, api } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
@@ -197,15 +197,49 @@ export default function Dashboard() {
     return () => Vibration.cancel();
   }, [urgentTrip]);
 
+  // Load dismissed trips from storage
+  useEffect(() => {
+    try {
+      AsyncStorage.getItem('dismissedStartTrips').then(stored => {
+        if (stored) {
+          try {
+            const arr = JSON.parse(stored);
+            dismissedStartTrips.current = new Set(arr);
+          } catch(e) {}
+        }
+      }).catch((e) => {
+        console.warn('AsyncStorage is not available for dismissedStartTrips:', e);
+      });
+    } catch (e) {
+      console.warn('AsyncStorage sync error:', e);
+    }
+  }, []);
+
+  const dismissTripStart = (key: string) => {
+    dismissedStartTrips.current.add(key);
+    try {
+      AsyncStorage.setItem('dismissedStartTrips', JSON.stringify(Array.from(dismissedStartTrips.current))).catch(() => {});
+    } catch (e) {}
+  };
+
   // Separate useEffect to check for trips that need to start
   useEffect(() => {
     const checkTripsToStart = async () => {
       try {
         const trips = await tripsAPI.getTrips(undefined, driverId, agencyId);
+        
+        let activeLocationTripIds = new Set<string>();
+        try {
+          const allLocsRes = await api.get('/mobile/locations/all');
+          const activeLocs = allLocsRes.data.filter((loc: any) => loc.is_active === true);
+          activeLocs.forEach((loc: any) => activeLocationTripIds.add(String(loc.trip_id)));
+        } catch (e) {}
+
         const now = new Date();
 
         const startingNow = trips.find((t: any) => {
           if (t.status === 'completed' || !t.is_active) return false;
+          if (activeLocationTripIds.has(String(t.id))) return false; // Already started
           if (!t.start_date) return false;
 
           const startDate = new Date(t.start_date);
@@ -366,9 +400,9 @@ export default function Dashboard() {
       Alert.alert('Success', 'Trip Started!');
       if (tripToStartNow) {
         const leg = tripToStartNow.one_way_is_active !== false ? 'outbound' : 'return';
-        dismissedStartTrips.current.add(`${tripId}-${leg}`);
+        dismissTripStart(`${tripId}-${leg}`);
       } else {
-        dismissedStartTrips.current.add(String(tripId));
+        dismissTripStart(String(tripId));
       }
       setTripToStartNow(null);
     } catch (e: any) {
@@ -457,7 +491,7 @@ export default function Dashboard() {
                   onPress={() => {
                     if (tripToStartNow) {
                       const leg = tripToStartNow.one_way_is_active !== false ? 'outbound' : 'return';
-                      dismissedStartTrips.current.add(`${tripToStartNow.id}-${leg}`);
+                      dismissTripStart(`${tripToStartNow.id}-${leg}`);
                     }
                     setTripToStartNow(null);
                   }}
