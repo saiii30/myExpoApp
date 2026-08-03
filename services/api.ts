@@ -159,4 +159,46 @@ export const tripsAPI = {
     });
     return response.data;
   },
+  updateLocation: async (locationId: number, data: {
+    driver_id: string | number;
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    speed?: number;
+  }) => {
+    const formData = new FormData();
+    formData.append('driver_id', data.driver_id.toString());
+    formData.append('latitude', data.latitude.toString());
+    formData.append('longitude', data.longitude.toString());
+    if (data.accuracy !== undefined) formData.append('accuracy', data.accuracy.toString());
+    if (data.speed !== undefined) formData.append('speed', data.speed.toString());
+
+    const response = await api.put(`/mobile/location/${locationId}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+  updateLocationRoutePoints: async (data: {
+    trip_id: string | number;
+    location_id: number;
+    driver_id: string;
+    agency_id: string;
+    route_point: any[];
+  }) => {
+    const formData = new FormData();
+    formData.append('trip_id', data.trip_id.toString());
+    formData.append('location_id', data.location_id.toString());
+    formData.append('driver_id', data.driver_id);
+    formData.append('agency_id', data.agency_id);
+    formData.append('route_point', JSON.stringify(data.route_point));
+
+    const response = await api.post('/mobile/route-points', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
 };

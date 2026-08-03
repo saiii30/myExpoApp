@@ -388,6 +388,30 @@ export default function Dashboard() {
         } catch (storageErr) {
           console.warn("AsyncStorage not available, skipping local save.", storageErr);
         }
+
+        // Sync initial route points to driver_location table immediately
+        let targetTrip = tripToStartNow;
+        if (!targetTrip && typeof urgentTrip !== 'undefined' && urgentTrip && urgentTrip.id === tripId) {
+          targetTrip = urgentTrip;
+        }
+
+        if (targetTrip && targetTrip.route_point) {
+          try {
+            const parsedPoints = typeof targetTrip.route_point === 'string' ? JSON.parse(targetTrip.route_point) : targetTrip.route_point;
+            if (Array.isArray(parsedPoints) && parsedPoints.length > 0) {
+              await tripsAPI.updateLocationRoutePoints({
+                trip_id: tripId,
+                location_id: locationResponse.location_id,
+                driver_id: driverId,
+                agency_id: agencyId,
+                route_point: parsedPoints
+              });
+              console.log("Successfully synced initial route points to driver_location table");
+            }
+          } catch(e) {
+             console.warn("Failed to sync initial route points", e);
+          }
+        }
       }
 
       // Accept the trip (if it's not already accepted)

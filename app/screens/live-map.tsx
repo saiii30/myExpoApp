@@ -1,8 +1,9 @@
-import { session, tripsAPI } from '@/services/api';
+import { session, tripsAPI, activeSession } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router, useLocalSearchParams, Stack } from 'expo-router';
 import React, { useEffect, useState, useRef } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View, ScrollView, Dimensions, Platform, Modal, Switch } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 
@@ -38,6 +39,18 @@ export default function LiveMapScreen() {
   }, [tripId, leg]);
 
   const startLocationTracking = async () => {
+    // If activeSession is missing, try to restore from AsyncStorage
+    if (!activeSession.location_id) {
+      try {
+        const storedId = await AsyncStorage.getItem('active_location_id');
+        if (storedId) {
+          activeSession.location_id = parseInt(storedId, 10);
+        }
+      } catch (e) {
+        console.warn('Failed to load active_location_id', e);
+      }
+    }
+
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       console.warn('Permission to access location was denied');
@@ -55,6 +68,17 @@ export default function LiveMapScreen() {
       },
       (loc) => {
         setDriverLocation(loc);
+        
+        // Push the updated location to the backend if we have an active location session
+        if (activeSession && activeSession.location_id) {
+          tripsAPI.updateLocation(activeSession.location_id, {
+            driver_id: driverId,
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            accuracy: loc.coords.accuracy || undefined,
+            speed: loc.coords.speed || undefined
+          }).catch(e => console.log('Background location update failed silently', e));
+        }
       }
     );
   };
@@ -236,7 +260,19 @@ export default function LiveMapScreen() {
       ispresent: p.ispresent !== false,
       dropoff: p.dropoff || false
     }));
-    tripsAPI.updateTripRoutePoint(tripId as string, cleanUpdated).catch(e => console.error(e));
+    
+    // Update DriverLocation Table (if location session is active)
+    if (activeSession && activeSession.location_id) {
+      tripsAPI.updateLocationRoutePoints({
+        trip_id: tripId as string,
+        location_id: activeSession.location_id,
+        driver_id: driverId,
+        agency_id: agencyId,
+        route_point: cleanUpdated
+      }).catch(e => console.log('Failed to sync route points to driver location', e));
+    } else {
+      console.warn("Cannot update route points: activeSession.location_id is missing");
+    }
   };
 
   if (loading || !trip) {
