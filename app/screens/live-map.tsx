@@ -451,7 +451,7 @@ export default function LiveMapScreen() {
 
       if (String(tripId).startsWith('mock-')) {
         Alert.alert('Success (Mock)', 'Mock trip completed locally');
-        router.back();
+        router.replace('/(tabs)/dashboard');
         return;
       }
 
@@ -489,7 +489,7 @@ export default function LiveMapScreen() {
       activeSession.location_id = null;
 
       Alert.alert('Success', 'Trip completed successfully');
-      router.back();
+      router.replace('/(tabs)/dashboard');
     } catch (error) {
       Alert.alert('Error', 'Failed to complete trip');
     }
