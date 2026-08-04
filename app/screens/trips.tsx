@@ -720,8 +720,19 @@ export default function TripsScreen() {
       displayStatus = 'completed';
     }
 
+    const isCurrentlyRunning = item.is_started && activeTab === 'current' && item.is_active !== false;
+
     return (
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[
+        styles.card, 
+        { backgroundColor: colors.card, borderColor: colors.border },
+        isCurrentlyRunning && styles.activeTripCard
+      ]}>
+        {isCurrentlyRunning && (
+          <View style={styles.runningBadge}>
+            <Text style={styles.runningBadgeText}>IN PROGRESS</Text>
+          </View>
+        )}
         <View style={styles.cardHeader}>
           <Text style={[styles.passengerName, { color: colors.textPrimary }]}>{item.passenger_name}</Text>
           <View style={styles.headerBadges}>
@@ -1125,6 +1136,36 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 15,
     elevation: 5,
+  },
+  activeTripCard: {
+    borderColor: '#38bdf8',
+    borderWidth: 2,
+    shadowColor: '#38bdf8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  runningBadge: {
+    position: 'absolute',
+    top: -12,
+    alignSelf: 'center',
+    backgroundColor: '#38bdf8',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    zIndex: 10,
+    shadowColor: '#38bdf8',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  runningBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
   cardHeader: {
     flexDirection: 'row',

@@ -213,10 +213,10 @@ export default function LiveMapScreen() {
 
       if (tripData && tripData.status === 'completed') {
         try {
-          const locRes = await api.get('/mobile/locations', { params: { trip_id: tripId, driver_id: driverId }});
+          const locRes = await api.get('/mobile/locations', { params: { trip_id: tripId, driver_id: driverId } });
           if (locRes.data && locRes.data.length > 0) {
             // Sort to get the latest
-            const latestLoc = locRes.data.sort((a:any, b:any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+            const latestLoc = locRes.data.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
             if (latestLoc.route_point) {
               const parsed = typeof latestLoc.route_point === 'string' ? JSON.parse(latestLoc.route_point) : latestLoc.route_point;
               if (Array.isArray(parsed) && parsed.length > 0) {
@@ -225,7 +225,7 @@ export default function LiveMapScreen() {
                   const pId = String(p.id || p.passenger_id);
                   const match = parsed.find((mp: any) => String(mp.passenger_id || mp.id) === pId || mp.passenger_name === p.name);
                   if (match) {
-                     return { ...p, ispresent: match.ispresent, pickup: match.pickup, dropoff: match.dropoff };
+                    return { ...p, ispresent: match.ispresent, pickup: match.pickup, dropoff: match.dropoff };
                   }
                   return p;
                 });
@@ -440,6 +440,61 @@ export default function LiveMapScreen() {
     }
   };
 
+  const handleComplete = async () => {
+    try {
+      let originalId = String(tripId);
+      if (originalId.endsWith('-outbound')) {
+        originalId = originalId.replace('-outbound', '');
+      } else if (originalId.endsWith('-return')) {
+        originalId = originalId.replace('-return', '');
+      }
+
+      if (String(tripId).startsWith('mock-')) {
+        Alert.alert('Success (Mock)', 'Mock trip completed locally');
+        router.back();
+        return;
+      }
+
+      let locationId = activeSession.location_id || 0;
+      if (locationId === 0) {
+        try {
+          const locIdStr = await AsyncStorage.getItem('active_location_id');
+          if (locIdStr) locationId = parseInt(locIdStr, 10);
+        } catch (storageErr) {
+          console.warn("AsyncStorage unavailable");
+        }
+      }
+
+      if (locationId === 0) {
+        try {
+          const allLocationsRes = await api.get('/mobile/locations/all');
+          const allLocations = allLocationsRes.data;
+          const activeLoc = allLocations.find((loc: any) => String(loc.trip_id) === originalId && loc.is_active === true);
+          if (activeLoc && activeLoc.id) {
+            locationId = activeLoc.id;
+          }
+        } catch (fetchErr) { }
+      }
+
+      if (locationId === 0) {
+        Alert.alert('Error', 'Could not find active location tracking for this trip.');
+        return;
+      }
+
+      await tripsAPI.completeTrip(driverId, locationId);
+
+      try {
+        await AsyncStorage.removeItem('active_location_id');
+      } catch (e) { }
+      activeSession.location_id = null;
+
+      Alert.alert('Success', 'Trip completed successfully');
+      router.back();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to complete trip');
+    }
+  };
+
   if (loading || !trip) {
     return (
       <View style={styles.loadingContainer}>
@@ -617,6 +672,15 @@ export default function LiveMapScreen() {
                 <Text style={styles.locationText} numberOfLines={1}>{trip.pickup_location}</Text>
                 <FontAwesome5 name="arrow-down" size={10} color="#64748b" style={{ marginVertical: 4 }} />
                 <Text style={styles.locationText} numberOfLines={1}>{trip.dropoff_location}</Text>
+
+                {trip?.status !== 'completed' && (
+                  <TouchableOpacity
+                    style={styles.completeTripBtn}
+                    onPress={handleComplete}
+                  >
+                    <Text style={styles.completeTripBtnText}>End</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </TouchableOpacity>
           </View>
@@ -656,15 +720,52 @@ export default function LiveMapScreen() {
                   <Text style={styles.locationLabel}>PICKUP POINT</Text>
                   <Text style={styles.locationText} numberOfLines={2}>{passenger.address}</Text>
                   {trip?.status !== 'completed' && (
-                    <TouchableOpacity
-                      style={styles.updateStatusBtn}
-                      onPress={() => {
-                        setSelectedPassenger(passenger);
-                        setShowPassengerModal(true);
-                      }}
-                    >
-                      <Text style={styles.updateStatusBtnText}>Take Action</Text>
-                    </TouchableOpacity>
+                    <View style={styles.actionButtonsRow}>
+                      {leg === 'outbound' ? (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.actionBtn, passenger.pickup && styles.actionBtnActivePickedUp]}
+                            onPress={() => {
+                              const val = !passenger.pickup;
+                              const updated = passengers.map(p =>
+                                p.id === passenger.id ? { ...p, pickup: val, ispresent: true } : p
+                              );
+                              setPassengers(updated);
+                              savePassengerState(updated);
+                            }}
+                          >
+                            <Text style={[styles.actionBtnText, passenger.pickup && styles.actionBtnTextActive]}>Picked Up</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.actionBtn, passenger.ispresent === false && styles.actionBtnActiveAbsent]}
+                            onPress={() => {
+                              const val = passenger.ispresent !== false;
+                              const updated = passengers.map(p =>
+                                p.id === passenger.id ? { ...p, ispresent: !val, pickup: false } : p
+                              );
+                              setPassengers(updated);
+                              savePassengerState(updated);
+                            }}
+                          >
+                            <Text style={[styles.actionBtnText, passenger.ispresent === false && styles.actionBtnTextActive]}>Absent</Text>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <TouchableOpacity
+                          style={[styles.actionBtn, passenger.dropoff && styles.actionBtnActiveDroppedOff, { flex: 1 }]}
+                          onPress={() => {
+                            const val = !passenger.dropoff;
+                            const updated = passengers.map(p =>
+                              p.id === passenger.id ? { ...p, dropoff: val } : p
+                            );
+                            setPassengers(updated);
+                            savePassengerState(updated);
+                          }}
+                        >
+                          <Text style={[styles.actionBtnText, passenger.dropoff && styles.actionBtnTextActive]}>Dropped Off</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   )}
                 </View>
               </TouchableOpacity>
@@ -987,8 +1088,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
   },
-  updateStatusBtn: {
+  completeTripBtn: {
+    marginTop: 16,
+    backgroundColor: '#6366f1',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    shadowColor: '#6366f1',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  completeTripBtnText: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginTop: 12,
+    gap: 8,
+  },
+  actionBtn: {
+    flex: 1,
     backgroundColor: 'rgba(99, 102, 241, 0.15)',
     paddingVertical: 8,
     borderRadius: 8,
@@ -996,10 +1120,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.3)',
   },
-  updateStatusBtnText: {
+  actionBtnText: {
     color: '#818cf8',
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: 12,
+  },
+  actionBtnTextActive: {
+    color: '#ffffff',
+  },
+  actionBtnActivePickedUp: {
+    backgroundColor: '#6366f1',
+    borderColor: '#6366f1',
+  },
+  actionBtnActiveAbsent: {
+    backgroundColor: '#ef4444',
+    borderColor: '#ef4444',
+  },
+  actionBtnActiveDroppedOff: {
+    backgroundColor: '#10b981',
+    borderColor: '#10b981',
   },
   passengerModalOverlay: {
     flex: 1,
