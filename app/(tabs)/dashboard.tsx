@@ -519,22 +519,38 @@ export default function Dashboard() {
               </View>
               
               {/* Contact */}
-              <TouchableOpacity 
-                style={styles.agencyRow} 
-                onPress={() => {
-                  const phone = agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact;
-                  if (phone) {
-                    Linking.openURL(`tel:${phone}`);
-                  } else {
-                    Alert.alert('Not Available', 'Contact number is not available.');
-                  }
-                }}
-              >
-                <FontAwesome5 name="phone-alt" size={14} color={colors.success} style={styles.agencyIcon} />
-                <Text style={[styles.agencyText, { color: colors.success, fontWeight: '700' }]}>
-                  {agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact || 'Contact not available'}
-                </Text>
-              </TouchableOpacity>
+              <View style={[styles.agencyRow, { justifyContent: 'space-between' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  <FontAwesome5 name="phone-alt" size={14} color={colors.textSecondary} style={styles.agencyIcon} />
+                  <Text style={[styles.agencyText, { color: colors.textSecondary }]}>
+                    {agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact || 'Contact not available'}
+                  </Text>
+                </View>
+                
+                {(agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact) && (
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: colors.success,
+                      paddingVertical: 8,
+                      paddingHorizontal: 16,
+                      borderRadius: 12,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      shadowColor: colors.success,
+                      shadowOpacity: 0.2,
+                      shadowRadius: 4,
+                      elevation: 2,
+                    }}
+                    onPress={() => {
+                      const phone = agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact;
+                      Linking.openURL(`tel:${phone}`);
+                    }}
+                  >
+                    <FontAwesome5 name="phone" size={12} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Call</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               
               {/* Email */}
               { (agencyDetails.email) && (
