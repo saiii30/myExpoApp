@@ -219,9 +219,9 @@ export default function TripsScreen() {
           end_date: ts.end_date,
         };
 
-        // Check completion flags for legs (handling boolean and string formats from DB)
-        const isOneWayCompleted = ts.one_way_isActive === false || ts.one_way_isActive === 'false' || ts.one_way_isActive === 0 || ts.one_way_is_active === false || ts.one_way_is_active === 'false' || ts.one_way_is_active === 0 || ts.status === 'completed';
-        const isTwoWayCompleted = ts.two_way_isActive === false || ts.two_way_isActive === 'false' || ts.two_way_isActive === 0 || ts.two_way_is_active === false || ts.two_way_is_active === 'false' || ts.two_way_is_active === 0 || ts.status === 'completed';
+        // Completed status now explicitly checks driver_response === 'completed' as per user request
+        const isOneWayCompleted = ts.driver_response === 'completed' || ts.status === 'completed';
+        const isTwoWayCompleted = ts.driver_response_two_way === 'completed' || ts.status === 'completed';
 
         // Check if this is a two-way trip
         if (ts.two_way_start_time !== null && ts.two_way_start_time !== undefined) {
@@ -619,10 +619,13 @@ export default function TripsScreen() {
     try {
       // Extract original_id if this is a leg trip (safely handle UUIDs)
       let originalId = String(tripId);
+      let leg: 'outbound' | 'return' = 'outbound';
       if (originalId.endsWith('-outbound')) {
         originalId = originalId.replace('-outbound', '');
+        leg = 'outbound';
       } else if (originalId.endsWith('-return')) {
         originalId = originalId.replace('-return', '');
+        leg = 'return';
       }
 
       if (String(tripId).startsWith('mock-')) {
@@ -663,7 +666,7 @@ export default function TripsScreen() {
         return;
       }
 
-      await tripsAPI.completeTrip(driverId, locationId);
+      await tripsAPI.completeTrip(driverId, locationId, originalId, leg);
 
       try {
         await AsyncStorage.removeItem('active_location_id');

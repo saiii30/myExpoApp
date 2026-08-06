@@ -320,6 +320,66 @@ export const showLocalNotification = async (title: string, body: string) => {
   }
 };
 
+export const scheduleCertificationExpiryNotification = async (driverId: string | number, expiryDateStr: string) => {
+  const hasPermission = await requestNotificationPermissions();
+  if (!hasPermission) return;
+
+  try {
+    const expiryDate = new Date(expiryDateStr.replace(' ', 'T'));
+    if (isNaN(expiryDate.getTime())) return;
+    
+    const now = new Date();
+    const daysToNotify = [5, 2, 1];
+    
+    // First, clear any previously scheduled certification notifications for this driver
+    for (const days of [5, 2, 1]) {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(`cert-expiry-${driverId}-${days}`);
+      } catch(e) {}
+    }
+
+    let scheduledAny = false;
+    
+    for (const days of daysToNotify) {
+      const targetDate = new Date(expiryDate.getTime() - (days * 24 * 60 * 60 * 1000));
+      targetDate.setHours(9, 0, 0, 0); // Alert at 9 AM
+      
+      if (targetDate > now) {
+        await Notifications.scheduleNotificationAsync({
+          identifier: `cert-expiry-${driverId}-${days}`,
+          content: {
+            title: 'Action Required: Certification Expiring Soon',
+            body: `Your driving certification will expire in ${days} ${days === 1 ? 'day' : 'days'}. Please renew it to avoid service interruption.`,
+            sound: true,
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: targetDate,
+          } as any,
+        });
+        console.log(`Scheduled certification expiry notification for ${days} days out (${targetDate.toISOString()})`);
+        scheduledAny = true;
+      }
+    }
+    
+    // If no future schedules were made, check if we are currently within the urgent window (<= 5 days) but before expiration
+    if (!scheduledAny && expiryDate > now) {
+      const msDiff = expiryDate.getTime() - now.getTime();
+      const daysDiff = Math.ceil(msDiff / (1000 * 60 * 60 * 24));
+      
+      if (daysDiff <= 5) {
+        // Show immediate local notification on app load
+        await showLocalNotification(
+          'Action Required: Certification Expiring Soon', 
+          `Your driving certification will expire in ${daysDiff} ${daysDiff === 1 ? 'day' : 'days'}. Please renew it immediately.`
+        );
+      }
+    }
+  } catch (error) {
+    console.error('Failed to schedule certification notification', error);
+  }
+};
+
 // Cancel local notifications for a specific trip in Expo Go, or let backend manage it in dev builds
 export const cancelTripNotifications = async (tripId: string | number) => {
   if (Platform.OS === 'android' && isRunningInExpoGo()) {

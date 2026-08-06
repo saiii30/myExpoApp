@@ -114,17 +114,28 @@ export const tripsAPI = {
     });
     return response.data;
   },
-  completeTrip: async (driverId: string | number, locationId: number) => {
+  completeTrip: async (driverId: string | number, locationId: number, tripId: string | number, leg: 'outbound' | 'return') => {
     // The new API expects location_id as Form data
     const formData = new FormData();
     formData.append('location_id', locationId.toString());
 
-    const response = await api.put(`mobile/location/deactivate/${driverId}`, formData, {
+    await api.put(`mobile/location/deactivate/${driverId}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     });
-    return response.data;
+
+    if (leg === 'return') {
+      const response = await api.put(`/trips/${tripId}/driver-response-return`, {
+        driver_response_two_way: 'completed'
+      });
+      return response.data;
+    } else {
+      const response = await api.put(`/trips/${tripId}/driver-response`, {
+        driver_response: 'completed'
+      });
+      return response.data;
+    }
   },
   updateTripRoutePoints: async (tripId: string | number, routePoints: any[]) => {
     const response = await api.put(`/trips/${tripId}`, {
@@ -132,6 +143,26 @@ export const tripsAPI = {
     });
     return response.data;
   },
+
+  // Call the real API on the TMS backend
+  getDriverDetails: async (driverId: string | number) => {
+    try {
+      const response = await api.get(`drivers/mobile/driver-details/${driverId}`);
+      return response.data;
+    } catch (error) {
+      console.error("Failed to fetch real driver details", error);
+      // Fallback to minimal data if the API fails or doesn't exist yet
+      return {
+        id: driverId,
+        name: session.user?.name || 'Active Driver',
+        contact_number: session.user?.contact_number || '+1 (555) 0199',
+        role: session.user?.role || 'Professional Driver',
+        email: session.user?.email || 'driver@tms.com',
+        agency_id: session.user?.agency_id || '6e7cdb44-603c-46c4-a4ca-198334c34314'
+      };
+    }
+  },
+
   startLocationTracking: async (data: {
     driver_id: string | number;
     trip_id: string | number;

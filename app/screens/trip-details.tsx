@@ -148,8 +148,9 @@ export default function TripDetailsScreen() {
           }
         }
         
-        const isOneWayCompleted = ts.one_way_isActive === false || ts.one_way_is_active === false || ts.status === 'completed';
-        const isTwoWayCompleted = ts.two_way_isActive === false || ts.two_way_is_active === false || ts.status === 'completed';
+        // Completed status now explicitly checks driver_response === 'completed' as per user request
+        const isOneWayCompleted = ts.driver_response === 'completed' || ts.status === 'completed';
+        const isTwoWayCompleted = ts.driver_response_two_way === 'completed' || ts.status === 'completed';
         
         let computedStatus = 'pending';
         if (leg === 'return') {

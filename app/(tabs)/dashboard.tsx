@@ -241,6 +241,25 @@ export default function Dashboard() {
     fetchAgency();
   }, [agencyId]);
 
+  // Check for certification expiry on app load
+  useEffect(() => {
+    const checkCertification = async () => {
+      try {
+        if (!session.user?.id) return;
+        const driverDetails = await tripsAPI.getDriverDetails(session.user.id);
+        if (driverDetails && driverDetails.license && driverDetails.license.expiry) {
+          const { scheduleCertificationExpiryNotification } = require('@/services/notifications');
+          await scheduleCertificationExpiryNotification(session.user.id, driverDetails.license.expiry);
+        }
+      } catch (e) {
+        console.log('Failed to check certification expiry', e);
+      }
+    };
+    
+    // Only check once when dashboard mounts
+    checkCertification();
+  }, []);
+
   const dismissTripStart = (key: string) => {
     dismissedStartTrips.current.add(key);
     try {
@@ -282,7 +301,7 @@ export default function Dashboard() {
 
           if (today >= tripStartDay && today <= tripEndDay) {
             // Check one_way_start_time
-            if (t.one_way_start_time && t.one_way_is_active !== false) {
+            if (t.one_way_start_time && t.one_way_is_active !== false && t.driver_response === 'accepted') {
               const [hour, minute, second] = t.one_way_start_time.split(':').map(Number);
               const tripTodayTime = new Date(now);
               tripTodayTime.setHours(hour, minute, second || 0, 0);
@@ -297,7 +316,7 @@ export default function Dashboard() {
             }
 
             // Check two_way_start_time if exists
-            if (t.two_way_start_time && t.two_way_is_active !== false) {
+            if (t.two_way_start_time && t.two_way_is_active !== false && t.driver_response_two_way === 'accepted') {
               const [hour, minute, second] = t.two_way_start_time.split(':').map(Number);
               const tripTodayTime = new Date(now);
               tripTodayTime.setHours(hour, minute, second || 0, 0);

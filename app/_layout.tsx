@@ -120,6 +120,7 @@ function RootLayoutContent() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="screens/notifications" options={{ headerShown: false }} />
         <Stack.Screen name="screens/trip-details" options={{ headerShown: false }} />
+        <Stack.Screen name="screens/driver-details" options={{ headerShown: false }} />
         <Stack.Screen name="screens/trips" options={{ headerShown: false }} />
         <Stack.Screen name="screens/map" options={{ headerShown: false }} />
         <Stack.Screen name="screens/settings" options={{ headerShown: false }} />

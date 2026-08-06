@@ -50,7 +50,11 @@ export default function SettingsScreen() {
       </View>
 
       {/* Driver Profile Summary */}
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <TouchableOpacity 
+        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={() => router.push('/screens/driver-details')}
+        activeOpacity={0.7}
+      >
         <View style={styles.profileRow}>
           <View style={[styles.avatar, { backgroundColor: colors.accentLight }]}>
             <FontAwesome5 name="user-astronaut" size={24} color={colors.accent} />
@@ -60,8 +64,9 @@ export default function SettingsScreen() {
             <Text style={[styles.profileMeta, { color: colors.textSecondary }]}>{user.role}</Text>
             <Text style={[styles.profileMeta, { color: colors.textSecondary }]}>{user.contact_number}</Text>
           </View>
+          <FontAwesome5 name="chevron-right" size={14} color={colors.textSecondary} />
         </View>
-      </View>
+      </TouchableOpacity>
 
       {/* Theme Settings Section */}
       <View style={styles.sectionHeader}>
