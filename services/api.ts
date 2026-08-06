@@ -56,6 +56,10 @@ export const authAPI = {
     const response = await api.get('/auth/agencies');
     return response.data;
   },
+  getAgenciesDetailed: async () => {
+    const response = await api.get('/auth/agencies/details');
+    return response.data;
+  },
 };
 
 export const tripsAPI = {

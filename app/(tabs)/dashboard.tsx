@@ -1,11 +1,15 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { activeSession, session, tripsAPI, api } from '@/services/api';
+import { activeSession, session, tripsAPI, api, authAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View, Linking, LayoutAnimation, UIManager } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function Dashboard() {
   const [availableCount, setAvailableCount] = useState<number | string>('-');
@@ -16,12 +20,16 @@ export default function Dashboard() {
   const [urgentTrip, setUrgentTrip] = useState<any>(null);
   const [tripToStartNow, setTripToStartNow] = useState<any>(null);
   const dismissedStartTrips = React.useRef<Set<string>>(new Set());
+  const [dismissedLoaded, setDismissedLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectTripId, setRejectTripId] = useState<string | number | null>(null);
   const [rejectTripLeg, setRejectTripLeg] = useState<'outbound' | 'return'>('outbound');
   const [rejectReason, setRejectReason] = useState('');
+
+  const [agencyDetails, setAgencyDetails] = useState<any>(null);
+  const [isAgencyExpanded, setIsAgencyExpanded] = useState(false);
 
   const theme = useColorScheme();
   const isDark = theme === 'dark';
@@ -207,13 +215,31 @@ export default function Dashboard() {
             dismissedStartTrips.current = new Set(arr);
           } catch(e) {}
         }
+        setDismissedLoaded(true);
       }).catch((e) => {
         console.warn('AsyncStorage is not available for dismissedStartTrips:', e);
+        setDismissedLoaded(true);
       });
     } catch (e) {
       console.warn('AsyncStorage sync error:', e);
+      setDismissedLoaded(true);
     }
   }, []);
+
+  useEffect(() => {
+    const fetchAgency = async () => {
+      try {
+        const agencies = await authAPI.getAgenciesDetailed();
+        const currentAgency = agencies.find((a: any) => String(a.id) === String(agencyId));
+        if (currentAgency) {
+          setAgencyDetails(currentAgency);
+        }
+      } catch (e) {
+        console.log('Failed to fetch agency details', e);
+      }
+    };
+    fetchAgency();
+  }, [agencyId]);
 
   const dismissTripStart = (key: string) => {
     dismissedStartTrips.current.add(key);
@@ -224,6 +250,8 @@ export default function Dashboard() {
 
   // Separate useEffect to check for trips that need to start
   useEffect(() => {
+    if (!dismissedLoaded) return;
+
     const checkTripsToStart = async () => {
       try {
         const trips = await tripsAPI.getTrips(undefined, driverId, agencyId);
@@ -259,9 +287,12 @@ export default function Dashboard() {
               const tripTodayTime = new Date(now);
               tripTodayTime.setHours(hour, minute, second || 0, 0);
               const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
-              // Show popup from 5 mins before start up to 30 mins after
-              if (diffMinutes >= -30 && diffMinutes <= 5) {
-                return !dismissedStartTrips.current.has(`${t.id}-outbound`);
+              // Show popup from 2 mins before start up to 30 mins after
+              if (diffMinutes >= -30 && diffMinutes <= 2) {
+                if (!dismissedStartTrips.current.has(`${t.id}-outbound`)) {
+                  t.startingLeg = 'outbound';
+                  return true;
+                }
               }
             }
 
@@ -272,8 +303,11 @@ export default function Dashboard() {
               tripTodayTime.setHours(hour, minute, second || 0, 0);
               const diffMinutes = (tripTodayTime.getTime() - now.getTime()) / (1000 * 60);
               console.log(`Trip ${t.id} two_way - diffMinutes: ${diffMinutes}`);
-              if (diffMinutes >= -30 && diffMinutes <= 5) {
-                return !dismissedStartTrips.current.has(`${t.id}-return`);
+              if (diffMinutes >= -30 && diffMinutes <= 2) {
+                if (!dismissedStartTrips.current.has(`${t.id}-return`)) {
+                  t.startingLeg = 'return';
+                  return true;
+                }
               }
             }
           }
@@ -289,7 +323,7 @@ export default function Dashboard() {
     checkTripsToStart();
     const interval = setInterval(checkTripsToStart, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [dismissedLoaded]);
 
   useEffect(() => {
     // Only vibrate for start trip if there is no urgent trip taking priority
@@ -423,7 +457,7 @@ export default function Dashboard() {
 
       Alert.alert('Success', 'Trip Started!');
       if (tripToStartNow) {
-        const leg = tripToStartNow.one_way_is_active !== false ? 'outbound' : 'return';
+        const leg = tripToStartNow.startingLeg || (tripToStartNow.one_way_is_active !== false ? 'outbound' : 'return');
         dismissTripStart(`${tripId}-${leg}`);
         router.push(`/screens/live-map?tripId=${tripId}&leg=${leg}`);
       } else {
@@ -454,6 +488,67 @@ export default function Dashboard() {
           <Text style={styles.statusPillText}>ON DUTY</Text>
         </View>
       </View>
+
+      {/* Agency Details Widget */}
+      {agencyDetails && (
+        <View style={[styles.agencyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <TouchableOpacity 
+            style={styles.agencyHeader} 
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setIsAgencyExpanded(!isAgencyExpanded);
+            }}
+          >
+            <View style={styles.agencyTitleContainer}>
+              <FontAwesome5 name="building" size={16} color={colors.accent} />
+              <Text style={[styles.agencyTitle, { color: colors.textPrimary }]}>
+                {agencyDetails.agency_name || agencyDetails.name || 'Agency Details'}
+              </Text>
+            </View>
+            <FontAwesome5 name={isAgencyExpanded ? "chevron-up" : "chevron-down"} size={14} color={colors.textSecondary} />
+          </TouchableOpacity>
+          
+          {isAgencyExpanded && (
+            <View style={[styles.agencyContent, { borderTopColor: colors.border }]}>
+              {/* Address */}
+              <View style={styles.agencyRow}>
+                <FontAwesome5 name="map-marker-alt" size={14} color={colors.textSecondary} style={styles.agencyIcon} />
+                <Text style={[styles.agencyText, { color: colors.textSecondary }]}>
+                  {agencyDetails.address || 'Address not available'}
+                </Text>
+              </View>
+              
+              {/* Contact */}
+              <TouchableOpacity 
+                style={styles.agencyRow} 
+                onPress={() => {
+                  const phone = agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact;
+                  if (phone) {
+                    Linking.openURL(`tel:${phone}`);
+                  } else {
+                    Alert.alert('Not Available', 'Contact number is not available.');
+                  }
+                }}
+              >
+                <FontAwesome5 name="phone-alt" size={14} color={colors.success} style={styles.agencyIcon} />
+                <Text style={[styles.agencyText, { color: colors.success, fontWeight: '700' }]}>
+                  {agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact || 'Contact not available'}
+                </Text>
+              </TouchableOpacity>
+              
+              {/* Email */}
+              { (agencyDetails.email) && (
+                <View style={styles.agencyRow}>
+                  <FontAwesome5 name="envelope" size={14} color={colors.textSecondary} style={styles.agencyIcon} />
+                  <Text style={[styles.agencyText, { color: colors.textSecondary }]}>
+                    {agencyDetails.email}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      )}
 
       {urgentTrip && (
         <Modal
@@ -516,7 +611,7 @@ export default function Dashboard() {
                   style={[styles.modalButton, styles.modalCancelButton, { borderColor: colors.border }]}
                   onPress={() => {
                     if (tripToStartNow) {
-                      const leg = tripToStartNow.one_way_is_active !== false ? 'outbound' : 'return';
+                      const leg = tripToStartNow.startingLeg || (tripToStartNow.one_way_is_active !== false ? 'outbound' : 'return');
                       dismissTripStart(`${tripToStartNow.id}-${leg}`);
                     }
                     setTripToStartNow(null);
@@ -978,6 +1073,50 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ef4444',
     marginLeft: 8,
+  },
+  agencyCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  agencyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+  },
+  agencyTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  agencyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginLeft: 10,
+  },
+  agencyContent: {
+    padding: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  agencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  agencyIcon: {
+    width: 20,
+    textAlign: 'center',
+    marginRight: 10,
+  },
+  agencyText: {
+    fontSize: 14,
+    flex: 1,
   },
   urgentCard: {
     margin: 16,
