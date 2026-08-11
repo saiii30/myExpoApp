@@ -1,11 +1,11 @@
-import { session, tripsAPI, activeSession, api } from '@/services/api';
+import { activeSession, api, session, tripsAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { router, useLocalSearchParams, Stack } from 'expo-router';
-import React, { useEffect, useState, useRef } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View, ScrollView, Dimensions, Platform, Modal, Switch } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Dimensions, Modal, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.8;
@@ -481,7 +481,8 @@ export default function LiveMapScreen() {
         return;
       }
 
-      await tripsAPI.completeTrip(driverId, locationId);
+      const tripLeg = leg === 'return' ? 'return' : 'outbound';
+      await tripsAPI.completeTrip(driverId, locationId, originalId, tripLeg);
 
       try {
         await AsyncStorage.removeItem('active_location_id');

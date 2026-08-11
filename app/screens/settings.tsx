@@ -1,12 +1,13 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Linking } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAppTheme } from '@/hooks/ThemeContext';
-import { session } from '@/services/api';
+import { authAPI, session } from '@/services/api';
 
 export default function SettingsScreen() {
   const { themePreference, theme, setThemePreference } = useAppTheme();
+  const [agencyDetails, setAgencyDetails] = useState<any>(null);
   
   // User Info
   const user = session.user || {
@@ -19,6 +20,20 @@ export default function SettingsScreen() {
   };
 
   const isDark = theme === 'dark';
+
+  useEffect(() => {
+    const fetchAgency = async () => {
+      try {
+        const agencies = await authAPI.getAgenciesDetailed();
+        const currentAgency = agencies.find((agency: any) => String(agency.id) === String(user.agency_id));
+        setAgencyDetails(currentAgency || null);
+      } catch (error) {
+        console.log('Failed to fetch agency details', error);
+      }
+    };
+
+    fetchAgency();
+  }, [user.agency_id]);
 
   // Dynamic theme styling
   const colors = {
@@ -67,6 +82,47 @@ export default function SettingsScreen() {
           <FontAwesome5 name="chevron-right" size={14} color={colors.textSecondary} />
         </View>
       </TouchableOpacity>
+
+      {/* Agency Details */}
+      {agencyDetails && (
+        <>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AGENCY</Text>
+          </View>
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.agencyTitleRow}>
+              <FontAwesome5 name="building" size={16} color={colors.accent} />
+              <Text style={[styles.cardLabel, styles.agencyTitle, { color: colors.textPrimary }]}>Agency Details</Text>
+            </View>
+            <Text style={[styles.agencyName, { color: colors.textPrimary }]}>
+              {agencyDetails.agency_name || agencyDetails.name || 'Agency'}
+            </Text>
+            <View style={styles.agencyRow}>
+              <FontAwesome5 name="map-marker-alt" size={14} color={colors.textSecondary} style={styles.agencyIcon} />
+              <Text style={[styles.agencyText, { color: colors.textSecondary }]}>{agencyDetails.address || 'Address not available'}</Text>
+            </View>
+            <View style={styles.agencyRow}>
+              <FontAwesome5 name="phone-alt" size={14} color={colors.textSecondary} style={styles.agencyIcon} />
+              <Text style={[styles.agencyText, { color: colors.textSecondary }]}>{agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact || 'Contact not available'}</Text>
+              {(agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact) && (
+                <TouchableOpacity
+                  style={[styles.callButton, { backgroundColor: '#10b981' }]}
+                  onPress={() => Linking.openURL(`tel:${agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact}`)}
+                >
+                  <FontAwesome5 name="phone" size={12} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.callButtonText}>Call</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {agencyDetails.email && (
+              <View style={[styles.agencyRow, { marginBottom: 0 }]}>
+                <FontAwesome5 name="envelope" size={14} color={colors.textSecondary} style={styles.agencyIcon} />
+                <Text style={[styles.agencyText, { color: colors.textSecondary }]}>{agencyDetails.email}</Text>
+              </View>
+            )}
+          </View>
+        </>
+      )}
 
       {/* Theme Settings Section */}
       <View style={styles.sectionHeader}>
@@ -192,6 +248,47 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: 2,
+  },
+  agencyTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  agencyTitle: {
+    marginLeft: 10,
+    marginBottom: 0,
+  },
+  agencyName: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 14,
+  },
+  agencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  agencyIcon: {
+    width: 20,
+    textAlign: 'center',
+    marginRight: 10,
+  },
+  agencyText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  callButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  callButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   sectionHeader: {
     marginBottom: 10,

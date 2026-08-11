@@ -1,15 +1,11 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { activeSession, session, tripsAPI, api, authAPI } from '@/services/api';
+import { activeSession, api, session, tripsAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View, Linking, LayoutAnimation, UIManager } from 'react-native';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+import { ActivityIndicator, Alert, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from 'react-native';
 
 export default function Dashboard() {
   const [availableCount, setAvailableCount] = useState<number | string>('-');
@@ -27,9 +23,6 @@ export default function Dashboard() {
   const [rejectTripId, setRejectTripId] = useState<string | number | null>(null);
   const [rejectTripLeg, setRejectTripLeg] = useState<'outbound' | 'return'>('outbound');
   const [rejectReason, setRejectReason] = useState('');
-
-  const [agencyDetails, setAgencyDetails] = useState<any>(null);
-  const [isAgencyExpanded, setIsAgencyExpanded] = useState(false);
 
   const theme = useColorScheme();
   const isDark = theme === 'dark';
@@ -225,21 +218,6 @@ export default function Dashboard() {
       setDismissedLoaded(true);
     }
   }, []);
-
-  useEffect(() => {
-    const fetchAgency = async () => {
-      try {
-        const agencies = await authAPI.getAgenciesDetailed();
-        const currentAgency = agencies.find((a: any) => String(a.id) === String(agencyId));
-        if (currentAgency) {
-          setAgencyDetails(currentAgency);
-        }
-      } catch (e) {
-        console.log('Failed to fetch agency details', e);
-      }
-    };
-    fetchAgency();
-  }, [agencyId]);
 
   // Check for certification expiry on app load
   useEffect(() => {
@@ -508,83 +486,6 @@ export default function Dashboard() {
         </View>
       </View>
 
-      {/* Agency Details Widget */}
-      {agencyDetails && (
-        <View style={[styles.agencyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <TouchableOpacity 
-            style={styles.agencyHeader} 
-            onPress={() => {
-              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-              setIsAgencyExpanded(!isAgencyExpanded);
-            }}
-          >
-            <View style={styles.agencyTitleContainer}>
-              <FontAwesome5 name="building" size={16} color={colors.accent} />
-              <Text style={[styles.agencyTitle, { color: colors.textPrimary }]}>
-                {agencyDetails.agency_name || agencyDetails.name || 'Agency Details'}
-              </Text>
-            </View>
-            <FontAwesome5 name={isAgencyExpanded ? "chevron-up" : "chevron-down"} size={14} color={colors.textSecondary} />
-          </TouchableOpacity>
-          
-          {isAgencyExpanded && (
-            <View style={[styles.agencyContent, { borderTopColor: colors.border }]}>
-              {/* Address */}
-              <View style={styles.agencyRow}>
-                <FontAwesome5 name="map-marker-alt" size={14} color={colors.textSecondary} style={styles.agencyIcon} />
-                <Text style={[styles.agencyText, { color: colors.textSecondary }]}>
-                  {agencyDetails.address || 'Address not available'}
-                </Text>
-              </View>
-              
-              {/* Contact */}
-              <View style={[styles.agencyRow, { justifyContent: 'space-between' }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <FontAwesome5 name="phone-alt" size={14} color={colors.textSecondary} style={styles.agencyIcon} />
-                  <Text style={[styles.agencyText, { color: colors.textSecondary }]}>
-                    {agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact || 'Contact not available'}
-                  </Text>
-                </View>
-                
-                {(agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact) && (
-                  <TouchableOpacity
-                    style={{
-                      backgroundColor: colors.success,
-                      paddingVertical: 8,
-                      paddingHorizontal: 16,
-                      borderRadius: 12,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      shadowColor: colors.success,
-                      shadowOpacity: 0.2,
-                      shadowRadius: 4,
-                      elevation: 2,
-                    }}
-                    onPress={() => {
-                      const phone = agencyDetails.contact_number || agencyDetails.phone || agencyDetails.contact;
-                      Linking.openURL(`tel:${phone}`);
-                    }}
-                  >
-                    <FontAwesome5 name="phone" size={12} color="#fff" style={{ marginRight: 6 }} />
-                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Call</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              
-              {/* Email */}
-              { (agencyDetails.email) && (
-                <View style={styles.agencyRow}>
-                  <FontAwesome5 name="envelope" size={14} color={colors.textSecondary} style={styles.agencyIcon} />
-                  <Text style={[styles.agencyText, { color: colors.textSecondary }]}>
-                    {agencyDetails.email}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-      )}
-
       {urgentTrip && (
         <Modal
           animationType="slide"
@@ -638,7 +539,7 @@ export default function Dashboard() {
               </View>
 
               <Text style={{ fontSize: 16, color: colors.textSecondary, textAlign: 'center', marginBottom: 20 }}>
-                It's time to start the trip for <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{tripToStartNow.passenger_name || tripToStartNow.company_name}</Text> at <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{tripToStartNow.starting_point}</Text>.
+                It&apos;s time to start the trip for <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{tripToStartNow.passenger_name || tripToStartNow.company_name}</Text> at <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{tripToStartNow.starting_point}</Text>.
               </Text>
 
               <View style={styles.modalButtons}>
@@ -1108,50 +1009,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ef4444',
     marginLeft: 8,
-  },
-  agencyCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    marginBottom: 20,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  agencyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-  },
-  agencyTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  agencyTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    marginLeft: 10,
-  },
-  agencyContent: {
-    padding: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
-  },
-  agencyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  agencyIcon: {
-    width: 20,
-    textAlign: 'center',
-    marginRight: 10,
-  },
-  agencyText: {
-    fontSize: 14,
-    flex: 1,
   },
   urgentCard: {
     margin: 16,

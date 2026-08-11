@@ -338,7 +338,7 @@ export default function TripsScreen() {
           source: 'history',
           start_date: h.execution_date,
           end_date: h.execution_date,
-          status: h.action, // 'completed' or 'rejected'
+          status: String(h.action || '').toLowerCase(), // 'completed' or 'rejected'
           is_active: false,
           start_time: (h.execution_date && (h.leg === 'return' ? ts.two_way_start_time : ts.one_way_start_time)) 
                         ? `${h.execution_date}T${h.leg === 'return' ? ts.two_way_start_time : ts.one_way_start_time}` 
@@ -416,7 +416,11 @@ export default function TripsScreen() {
           if (t.source === 'history') return t.status === 'rejected';
           
           // Fallback for old trips without history records
-          const hasHistory = historyFormattedTrips.some(h => h.original_id === t.original_id && h.status === 'rejected');
+          const hasHistory = historyFormattedTrips.some(h =>
+            h.original_id === t.original_id &&
+            h.status === 'rejected' &&
+            (h.leg === t.leg || !h.leg)
+          );
           if (hasHistory) return false;
           return t.status === 'rejected';
         }
@@ -427,7 +431,11 @@ export default function TripsScreen() {
           if (t.source === 'history') return t.status === 'completed';
           
           // Fallback for old trips without history records
-          const hasHistory = historyFormattedTrips.some(h => h.original_id === t.original_id && h.status === 'completed');
+          const hasHistory = historyFormattedTrips.some(h =>
+            h.original_id === t.original_id &&
+            h.status === 'completed' &&
+            (h.leg === t.leg || !h.leg)
+          );
           if (hasHistory) return false;
           return !isActive && t.status !== 'rejected';
         }
@@ -711,12 +719,12 @@ export default function TripsScreen() {
           displayStatus = 'completed';
         }
       } else if (selected.getTime() < today.getTime()) {
-        if (item.source === 'history') {
+        // A passed date alone does not mean the driver completed the trip.
+        // Only an actual completion record can use the completed status.
+        if (item.source === 'history' || item.status === 'completed' || item.status === 'rejected') {
           displayStatus = item.status;
-        } else if (item.status === 'rejected') {
-          displayStatus = 'rejected';
         } else {
-          displayStatus = 'completed';
+          displayStatus = 'pending';
         }
       }
     } else if (item.is_active === false && item.status !== 'rejected') {
