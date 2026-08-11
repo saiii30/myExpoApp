@@ -128,13 +128,11 @@ export const tripsAPI = {
     if (leg === 'return') {
       const response = await api.put(`/trips/${tripId}/driver-response-return`, {
         driver_response_two_way: 'completed',
-        driver_reason_two_way: 'Completed by driver'
       });
       return response.data;
     } else {
       const response = await api.put(`/trips/${tripId}/driver-response`, {
         driver_response: 'completed',
-        driver_reason: 'Completed by driver'
       });
       return response.data;
     }

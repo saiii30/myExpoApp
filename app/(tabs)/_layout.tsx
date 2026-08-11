@@ -1,6 +1,7 @@
 import { FontAwesome5 } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { brand, surface } from '@/constants/design';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -11,21 +12,23 @@ export default function RootLayout() {
       initialRouteName="dashboard"
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#6366f1',
-        tabBarInactiveTintColor: isDark ? '#94a3b8' : '#64748b',
+        tabBarActiveTintColor: brand.primary,
+        tabBarInactiveTintColor: isDark ? surface.dark.muted : surface.light.muted,
         tabBarStyle: {
-          backgroundColor: isDark ? '#1e293b' : '#ffffff',
+          backgroundColor: isDark ? surface.dark.card : surface.light.card,
           borderTopWidth: 1,
-          borderTopColor: isDark ? '#334155' : '#e2e8f0',
-          elevation: 10,
-          shadowOpacity: isDark ? 0.2 : 0.08,
-          shadowRadius: 10,
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 8,
+          borderTopColor: isDark ? surface.dark.border : surface.light.border,
+          elevation: 14,
+          shadowColor: '#0F172A',
+          shadowOpacity: isDark ? 0.3 : 0.1,
+          shadowRadius: 18,
+          shadowOffset: { width: 0, height: -4 },
+          height: 68,
+          paddingBottom: 10,
+          paddingTop: 10,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '700',
         },
       }}
@@ -54,4 +57,3 @@ export default function RootLayout() {
     </Tabs>
   );
 }
-

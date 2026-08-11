@@ -1,4 +1,5 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { brand, surface } from '@/constants/design';
 import { activeSession, api, session, tripsAPI } from '@/services/api';
 import { FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -32,18 +33,16 @@ export default function Dashboard() {
 
   // Dynamic colors
   const colors = {
-    background: isDark ? '#0b0f19' : '#f8fafc',
-    card: isDark ? '#1e293b' : '#ffffff',
-    textPrimary: isDark ? '#f8fafc' : '#0f172a',
-    textSecondary: isDark ? '#94a3b8' : '#64748b',
-    border: isDark ? '#334155' : '#e2e8f0',
-    accent: '#6366f1',
-    accentLight: 'rgba(99, 102, 241, 0.12)',
-    success: '#10b981',
+    ...(isDark ? surface.dark : surface.light),
+    textPrimary: isDark ? surface.dark.text : surface.light.text,
+    textSecondary: isDark ? surface.dark.muted : surface.light.muted,
+    accent: brand.primary,
+    accentLight: 'rgba(79, 70, 229, 0.12)',
+    success: brand.success,
     successLight: 'rgba(16, 185, 129, 0.15)',
-    glowDot: '#10b981',
-    warning: '#f59e0b',
-    danger: '#ef4444',
+    glowDot: brand.success,
+    warning: brand.warning,
+    danger: brand.danger,
   };
 
   useEffect(() => {
@@ -477,8 +476,9 @@ export default function Dashboard() {
           <FontAwesome5 name="user-astronaut" size={20} color={colors.accent} />
         </View>
         <View style={styles.profileDetails}>
-          <Text style={styles.profileGreeting}>WELCOME BACK</Text>
+          <Text style={styles.profileGreeting}>DRIVER CONSOLE</Text>
           <Text style={[styles.profileName, { color: colors.textPrimary }]}>{session.user?.name || 'Active Driver'}</Text>
+          <Text style={[styles.profileSubtext, { color: colors.textSecondary }]}>Ready for your next assignment</Text>
         </View>
         <View style={styles.statusPill}>
           <View style={styles.statusGlowDot} />
@@ -769,15 +769,16 @@ const styles = StyleSheet.create({
   profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 22,
+    padding: 18,
+    borderRadius: 24,
     marginTop: 10,
     marginBottom: 20,
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
   profileAvatar: {
     width: 46,
@@ -798,9 +799,14 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   profileName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '800',
     marginTop: 2,
+  },
+  profileSubtext: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 3,
   },
   statusPill: {
     flexDirection: 'row',
@@ -915,9 +921,9 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     width: '31%',
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
-    padding: 12,
+    padding: 14,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -953,8 +959,8 @@ const styles = StyleSheet.create({
   metricRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
-    borderRadius: 18,
+    padding: 16,
+    borderRadius: 20,
     borderWidth: 1,
     marginBottom: 12,
     shadowColor: '#000',
