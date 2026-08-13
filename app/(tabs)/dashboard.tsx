@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from 'react-native';
+import { Alert, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from 'react-native';
 
 export default function Dashboard() {
   const [availableCount, setAvailableCount] = useState<number | string>('-');
@@ -18,7 +18,7 @@ export default function Dashboard() {
   const [tripToStartNow, setTripToStartNow] = useState<any>(null);
   const dismissedStartTrips = React.useRef<Set<string>>(new Set());
   const [dismissedLoaded, setDismissedLoaded] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectTripId, setRejectTripId] = useState<string | number | null>(null);
@@ -630,13 +630,7 @@ export default function Dashboard() {
         <Text style={[styles.panelTitle, { color: colors.textSecondary }]}>REALTIME OPERATIONAL METRICS</Text>
       </View>
 
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color={colors.accent} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Updating dispatch data...</Text>
-        </View>
-      ) : (
-        <View style={styles.metricsContainer}>
+      <View style={styles.metricsContainer}>
           {/* Available Jobs Row */}
           <TouchableOpacity
             style={[styles.metricRow, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -704,8 +698,7 @@ export default function Dashboard() {
               <Text style={[styles.countText, { color: '#ef4444' }]}>{rejectedCount}</Text>
             </View>
           </TouchableOpacity>
-        </View>
-      )}
+      </View>
 
       {/* Terminate Session Action */}
       <TouchableOpacity
